@@ -17,5 +17,5 @@ sudo nvidia-docker run -it --rm -p 8888:8888 rapids-demo:v1
 ssh -N- -f -L 8888:localhost:8888 remote_user@remote_host
 
 # launch notebook
-once inside jupyter notebook navigate to /rapids/rapids_demo_v5.ipynb 
+once inside jupyter notebook navigate to /rapids/rapids_demo.ipynb 
 
