@@ -1,0 +1,21 @@
+launch demo instructions
+
+# container content: copy and paste text/content from the URL below into a new file named 'Dockerfile'
+https://raw.githubusercontent.com/miroenev/rapids/master/Dockerfile
+
+# build container: in the same directory where the Dockerfile was just created execute the following command 
+# this make take 5-10 minutes
+sudo docker build -t rapids-demo:v1 .
+
+# run container: launch the container with the following command [ note: auto launches jupyter notebook ]
+sudo nvidia-docker run -it --rm -p 8888:8888 rapids-demo:v1
+
+# on machine which will run the demo (from a browser) create a ssh tunnel to container
+# 	e.g. if remote_username = menev and remote_host = 10.0.0.1 
+#		ssh -N -f -L 8888:localhost:8888 menev@10.0.0.1
+ 	
+ssh -N- -f -L 8888:localhost:8888 remote_user@remote_host
+
+# launch notebook
+once inside jupyter notebook navigate to /rapids/rapids_demo_v5.ipynb 
+
