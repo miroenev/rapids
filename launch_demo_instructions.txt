@@ -15,7 +15,7 @@
 
 # 4 -- create a port map / ssh-tunnel to the container 
  	
-    ssh -N -f -L 8888:localhost:8888 remote_user@remote_host
+    ssh -L 8888:localhost:8888 remote_user@remote_host
 
 
 # 5 -- launch demo notebook
