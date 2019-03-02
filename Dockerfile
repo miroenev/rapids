@@ -4,8 +4,6 @@ USER root
 
 RUN apt update && apt -y upgrade
 
-RUN source activate rapids && pip install cupy-cuda100
-
 RUN source activate rapids && conda install --yes -c conda-forge ipyvolume=0.5.1
 
 RUN source activate rapids && jupyter nbextension enable --py --sys-prefix ipyvolume
