@@ -10,7 +10,7 @@
 
 # 3 -- launch/run the container [ auto starts jupyter notebook ]
 
-    sudo docker run --runtime=nvidia -it --rm -p 8888:8888 rapids-demo:v0
+    sudo docker run --runtime=nvidia -it --rm -p 8888:8888 -p 8787:8787 rapids-demo:v0
 
 
 # 4 -- create a port map / ssh-tunnel to the container 
