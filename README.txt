@@ -13,15 +13,17 @@
     sudo docker run --runtime=nvidia -it --rm -p 8888:8888 -p 8787:8787 rapids-demo:v0
 
 
-# 4 -- create a port map / ssh-tunnel to the container 
+# 4 -- create a port map / ssh-tunnel to the container [ opening ports for jupyter lab and the dask dashboard ]
  	
-    ssh -L 8888:localhost:8888 remote_user@remote_host
-
+    ssh -N -f -L 8888:localhost:8888 -L 8787:localhost:8787 remote_user@remote_host
 
 # 5 -- launch demo from browser [ on your local machine ]
 
-    use a browser [ firefox is recommended ] and navigate to 127.0.0.1:8888
-    this should open a jupyter lab/notebook session
-    navigate to the /rapids directory
-    click on rapids_demo.ipynb to launch the demo
+    use a browser [ firefox is recommended ] and navigate to localhost:8888    
+    navigate to the /rapids directory and click on rapids_ml_workflow_demo.ipynb 
 
+# 6 [ optional ] -- launch dask demo
+
+    use a browser [ firefox is recommended ] and navigate to localhost:8888    
+    launch/click on rapids_ml_workflow_demo_dask_v0.ipynb 
+    open a browser tab to localhost:8787 for the dask dashboard
