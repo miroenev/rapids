@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/rapidsai/rapidsai:cuda10.0-runtime-ubuntu16.04
+FROM nvcr.io/nvidia/rapidsai/rapidsai:0.6-cuda10.0-runtime-ubuntu18.04-gcc7-py3.7
 
 RUN apt update && apt -y upgrade
 
