@@ -1,3 +1,5 @@
+Walkthrough of Demo Notebook: <a href="https://www.dropbox.com/s/1qkmsnynog45ox8/rapids_walkthrough_4_25.mp4?dl=0">Video Link</a>
+
 # 1 -- clone repository
 
     git clone https://github.com/miroenev/rapids && cd rapids
