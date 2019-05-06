@@ -39,6 +39,34 @@ def bar_plot_question(dataframe, schemaSurveyDF, qNum, nTopResults = None, newIn
     
     plt.title(schemaSurveyDF['Question'][qNum].split('(')[0])
 
+    
+def pie_plot_important_activities_2018(kaggleSurveyDF_2018, schemaSurveyDF_2018 ):
+    responseCountsList = []
+    responseOptionsTextList = []
+    responseOptionsTextListAnnotated = ['Analyze and understand data',
+                                        'Use ML services to improve product or wokflows',
+                                        'Build/run data infrastructure',
+                                        'Apply ML to new areas and build prototypes',
+                                        'Research/advance state of the art in ML',
+                                        'Other / None of these activities are important to my role']
+
+    for iOption in range(1,8):
+        responseOptionsTextList += [ kaggleSurveyDF_2018['Q11_Part_' + str(iOption)][0].split('-')[-1].strip() ]
+        responseCountsList += [ kaggleSurveyDF_2018['Q11_Part_' + str(iOption)][1:].dropna().value_counts()[0] ]
+
+    responseCountsList[-2] = responseCountsList[-1] + responseCountsList[-2]
+    responseCountsList = responseCountsList[:-1]
+    plt.figure()
+    plt.pie( x = responseCountsList,
+            labels = responseOptionsTextListAnnotated,
+            startangle=90,
+            autopct='%1.1f%%',
+            wedgeprops = { 'linewidth' : 1 , 'edgecolor' : 'white'},
+            colors=np.array(plt.get_cmap('tab20').colors)
+        );
+    plt.show()
+    
+# used in previous version [ 2017 ] to show datascientist activity breakdown
 def plot_datascientist_time_breakdown(dataframe, schemaSurveyDF, 
                                       columnsOfInterest = [ 'TimeGatheringData', 'TimeVisualizing', 
                                                             'TimeFindingInsights', 'TimeModelBuilding', 
