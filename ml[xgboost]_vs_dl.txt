@@ -1,0 +1,111 @@
+Ml vs DL playground [ xgboost vs DL ]
+
+of course its never 
+
+DL models have 'broken the ceiling' on problems with 
+
+    1 -- sequential state [ e.g., NLP via RNNs ]
+
+    2 -- unsupervised learning [ e.g. anomaly detection via bottleneck / autoencoder architecture ]
+
+    3 -- generative models [ GANs ]
+
+    4 -- perception [ ]
+
+        convolutions in CNN bring domain knowledge to the table 
+        - namely that image information is generally spatially correlated.
+
+    5 -- RL 
+
+        perception + sequence [ atari ]
+     
+! however, [ ] DL models may not always be the best choice for small/tabular learning problems.
+
+
+in this post, we investigate the ML vs DL perf [ precision / recall ] -- [ sidebar: spread of arrows, distance of center of spread from actual bulls-eye ]
+[ 
+    ML1 - xgboost
+    ML2 - bayesian 
+    ML3 - svm[s]
+
+    1 Dense [ wide ] 75 * 3 : 
+    2 Dense [ tall ] 25 * 10 : 
+]
+
+finite training time [ defined as nRounds ]
+
+chained trees -> figure 
+
+
+container one
+    dataset 1 @ model 1
+
+    dataset 1 @ model 1 
+        ... infinite training [ ? ]
+    
+    dataset 1 @ model 2  
+        ... 
+
+
+interestingly every small problem also has an [ ~optimal NN ] however finding this is often a ... significant challenge 
+[     
+    2 AE->AE -> Dense [ classifier ],
+    3 CNN stack -> Dense
+    4 bi-RNN 
+] 
+
+ datasets with labels/known-outcomes [ aka. supervised learning ] 
+++ karpathy ideas
+
+[ ~ infinite training time ] - 1 day 
+
+
+
+but what about small[er] supervised learning problems
+    arguably, these datasets are more common/available  
+
+
+
+variation in architecture of model [ bias ] 
+
+    + learning algo [ .: convergence time is irrelevant fast / infinite ]
+
+no-variation in [ attempted ] 
+    
+    # trainable model params [ weight class ]
+    
+    loss function [ penalty for being wrong ] [  ]
+
+[ training time will be recorded but not constrained ]
+
+
+
+datasets
+
+
+    intertwined geometries
+        line --
+        arcs --  
+        blobs -- 
+        swiss roll -- log(x) + sin(y) ...
+    
+    spreadsheet [ wine ]
+    
+    digits / clothes
+
+    [ + other ] problems xgboost has won 
+
+
+dataset variations
+    size -- N_samples >> RFeatures
+    complexity -- amount of non-linearity in label generating distribution
+    
+    [ optional ] noise -- [ RFeatures + nonRFeatures]
+
+
+
+
+visualization
+    learned space in 3D 
+    [ requires lots of inference on a 3D meshgrid ]
+
