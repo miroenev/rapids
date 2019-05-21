@@ -1,0 +1,12 @@
+speed_to_accuracy_xgboost_SL.txt
+
+todo
+
+    1 -- motivate [ what & why ]
+
+    2 -- how
+
+    3 -- simple visual example
+
+    4 -- larger demo on other tabular SL datasets
+        [ figure @ dataset x 4 datasets [ sklearn ] ]

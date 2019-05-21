@@ -1,5 +1,11 @@
 Ml vs DL playground [ xgboost vs DL ]
 
+https://www.reddit.com/r/MachineLearning/comments/9826bt/d_why_is_deep_learning_so_bad_for_tabular_data/
+https://www.reddit.com/r/MachineLearning/comments/6i7qck/d_using_anns_on_small_data_deep_learning_vs/
+https://www.reddit.com/r/learnmachinelearning/comments/89y86u/randomforest_beats_my_neural_network_why/
+https://www.reddit.com/r/MachineLearning/comments/5m2nnh/d_random_forests_vs_neural_nets_on_times_series/
+
+
 of course its never 
 
 DL models have 'broken the ceiling' on problems with 
@@ -108,4 +114,5 @@ dataset variations
 visualization
     learned space in 3D 
     [ requires lots of inference on a 3D meshgrid ]
+
 
