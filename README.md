@@ -5,25 +5,29 @@
 
 # Contents
 
-> 1. Motivate rapids [ show coverage of modern data science tools ]
+1. Motivate rapids [ show coverage of modern data science tools ]
 
-> 2. Generate a synthetic dataset
-    * 2.1 - Split into train and test set
-    * 2.2 - Visualize sub-datasets
+2. Generate a synthetic dataset
 
-> 3. ETL
-    * 3.1 - Load data [ csv read ]     
-    * 3.2 - Transform data [ standard scaler ]
+* 2.1 - Split into train and test set
+* 2.2 - Visualize sub-datasets
 
-> 4. Model Building 
-    * 4.1 - Train CPU and GPU XGBoost classifier models 
-    * 4.2 - Use trained models for inference
-    * 4.3 - Compare accuracy
-    * 4.4 - Visualize sample boosted trees & model predictions
+3. ETL
 
-> 5. Extensions 
-    * 5.1 - Create an ensemble with a clustering model [ DBScan ]
-    * 5.2 - Export data to DeepLearning Framework [ PyTorch ]
+* 3.1 - Load data [ csv read ]     
+* 3.2 - Transform data [ standard scaler ]
+
+4. Model Building 
+
+* 4.1 - Train CPU and GPU XGBoost classifier models 
+* 4.2 - Use trained models for inference
+* 4.3 - Compare accuracy
+* 4.4 - Visualize sample boosted trees & model predictions
+
+5. Extensions 
+
+* 5.1 - Create an ensemble with a clustering model [ DBScan ]
+* 5.2 - Export data to DeepLearning Framework [ PyTorch ]
     
 <center><img width='80%
 ' src='https://raw.githubusercontent.com/miroenev/rapids/master/dataset.png'></center>
@@ -53,9 +57,3 @@
 
     ii) in the rapids folder launch the notebook titled 
         rapids_ml_workflow_demo.ipynb
-## Additional instructions for advanced setups [ SSH Tunnel & Dask ]
-
-### 5 -- create a port map / ssh-tunnel to the container [ opening ports for jupyter lab and the dask dashboard ]
-        
-    ssh -N -f -L 8888:localhost:8888 -L 8787:localhost:8787 remote_user@remote_host
-
