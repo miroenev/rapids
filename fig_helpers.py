@@ -69,7 +69,7 @@ def bar_plot_question_2017_methods ():
     plt.gca().set_axisbelow(True)
     plt.grid(True, linestyle='--', color='silver', linewidth=2)# plt.grid(True)    
     plt.gca().xaxis.grid(False)
-    titleStr= "Of the models you've trained at work, what is the typical size of datasets used?"
+    titleStr= "What methods do you use most often?"
     plt.title(titleStr)
     
 def bar_plot_2018_language():
@@ -126,7 +126,7 @@ it has been replaced with the hard coded version to minimize external dependenci
 #----------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------
 
-
+'''
 schemaFilePath_2018 = 'kaggle_data/2018/SurveySchema.csv'
 schemaSurveyDF_2018 = pd.read_csv(schemaFilePath_2018)
 
@@ -177,3 +177,4 @@ def bar_plot_2018(kaggleSurveyDF_2018, schemaSurveyDF_2018, qNum = 17):
     plt.gca().xaxis.grid(False)
     plt.title(kaggleSurveyDF_2018['Q'+str(qNum)][0].split('-')[0].strip())
 
+'''
