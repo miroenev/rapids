@@ -18,10 +18,10 @@ RUN apt -y --fix-missing install font-manager unzip git vim htop
 
 RUN git clone https://github.com/miroenev/rapids
 
-RUN cd rapids && mkdir -p kaggle_data/2017 && mv kaggle-survey-2017.zip kaggle_data/2017 && cd kaggle_data/2017 && unzip *.zip
-RUN cd rapids && mkdir -p kaggle_data/2018 && mv kaggle-survey-2018.zip kaggle_data/2018 && cd kaggle_data/2018 && unzip *.zip
+#RUN cd rapids && mkdir -p kaggle_data/2017 && mv kaggle-survey-2017.zip kaggle_data/2017 && cd kaggle_data/2017 && unzip *.zip
+#RUN cd rapids && mkdir -p kaggle_data/2018 && mv kaggle-survey-2018.zip kaggle_data/2018 && cd kaggle_data/2018 && unzip *.zip
 
-RUN cd rapids && cd kaggle_data && wget -O results.csv https://raw.githubusercontent.com/adgirish/kaggleScape/d291e121b2ece69cac715b4c89f4f19b684d4d02/results/annotResults.csv
+#RUN cd rapids && cd kaggle_data && wget -O results.csv https://raw.githubusercontent.com/adgirish/kaggleScape/d291e121b2ece69cac715b4c89f4f19b684d4d02/results/annotResults.csv
 
 # enables demo of ETL with RAPIDS and model building with DL-framework [ optional extension ]
 RUN source activate rapids && conda install -y -c pytorch pytorch    
