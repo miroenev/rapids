@@ -307,9 +307,10 @@ def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters =
     accuracies = np.zeros( ( nTimesteps, nParticles) )
     bestParticleIndex = {}
 
-    bestParticle = np.zeros( (nTimesteps, 1, nParameters) )
+    globalBestParticleParams = np.zeros((nTimesteps, 1, nParameters))
     particles = np.zeros( (nTimesteps, nParticles, nParameters ) )
     velocities = np.zeros( (nTimesteps, nParticles, nParameters ) )
+    particleBoostingRounds = np.zeros((nTimesteps, nParticles))
     
     # initial velocity is one
     velocities[0, :, :] = np.ones( ( nParticles, nParameters ) ) * .25
@@ -319,7 +320,7 @@ def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters =
 
     # best initialized to middle [ fictional particle ] -- is this necessary
     bestParticleIndex[0] = -1
-
+        
     # grid initialize particles
     x = np.linspace( paramRanges[0][1], paramRanges[0][2], nWorkers)
     y = np.linspace( paramRanges[1][1], paramRanges[1][2], nWorkers)
@@ -344,7 +345,7 @@ def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters =
         ipv.zlim( paramRanges[2][1], paramRanges[2][2] )
         ipv.show()
         
-    return particles, velocities, accuracies, bestParticleIndex, particleColors
+    return particles, velocities, accuracies, bestParticleIndex, globalBestParticleParams, particleBoostingRounds, particleColors
 
 def viz_search( accuracies, particleBoostingRounds ):
     fig = plt.figure(figsize=(30,20))
