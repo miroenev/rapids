@@ -332,7 +332,9 @@ def train_model_hpo ( trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_c
                                      verbose_eval = False )
     
     elapsedTime = time.time() - startTime
-    print('training xgboost model on GPU t: {}, nP: {}, params [  {} {} {} ], time: {} '.format( iTimestep, iParticle, particleParams[0], particleParams[1], particleParams[2], elapsedTime) );  
+    
+    #print('training xgboost model on GPU t: {}, nP: {}, params [  {} {} {} ], time: {} '.format( iTimestep, iParticle, particleParams[0], particleParams[1], particleParams[2], elapsedTime) );  
+    
     return trainedModelGPU, elapsedTime
 
 def test_model_hpo ( trainedModelGPU, trainingTime, testData_cDF, testLabels_cDF ):
@@ -345,7 +347,7 @@ def test_model_hpo ( trainedModelGPU, trainingTime, testData_cDF, testLabels_cDF
     return predictionsGPU, trainedModelGPU.best_iteration, trainingTime, time.time() - startTime
 
 
-def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, randomSeed = 0):
+def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, randomSeed = 0, plotFlag = True):
     
     pandasTestLabels = testLabels_cDF.to_pandas()
 
@@ -359,7 +361,8 @@ def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainDa
         globalBestParticleParams, particleBoostingRounds, particleColors = initalize_hpo ( nTimesteps = nTimesteps, 
                                                                                            nParticles = nParticles, 
                                                                                            nWorkers = nWorkers, 
-                                                                                           paramRanges = paramRanges)
+                                                                                           paramRanges = paramRanges,
+                                                                                           plotFlag = plotFlag)
     globalBestAccuracy = 0
     
     trainingTimes = np.zeros (( nTimesteps, nParticles ))    
@@ -419,9 +422,24 @@ def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainDa
                                                                                               velocities[iTimestep, :, :].copy(), 
                                                                                               bestParticleIndex[iTimestep+1], 
                                                                                               globalBestParticleParams[iTimestep+1], randomSeed = iTimestep)
+            
+
     
     particleSizes = particleBoostingRounds/np.max(particleBoostingRounds)*10 + 2
+    
     elapsedTime = time.time() - startTime
+    
+    bestParamIndex = np.unravel_index(np.argmax(accuracies, axis=None), accuracies.shape)
+
+    # best accuracy
+    print('highest accuracy               :  {} '.format(accuracies[bestParamIndex[0], bestParamIndex[1]]))
+    print('   @ timestep {}, particle {} '.format( bestParamIndex[0], bestParamIndex[1]))
+
+    print('\nbest model tree depth          :  {} '.format(particles[bestParamIndex[0], bestParamIndex[1], 0]))
+    print('best model learning rate       :  {} '.format(particles[bestParamIndex[0], bestParamIndex[1], 1]))
+    print('best model regularization      :  {} '.format(particles[bestParamIndex[0], bestParamIndex[1], 2]))
+    print('best model num boosting rounds :  {} '.format(int(particleBoostingRounds[bestParamIndex[0], bestParamIndex[1]])))
+    
     print( 'elapsed time : {}'.format(elapsedTime) )
     
     return accuracies, particles, velocities, particleSizes, particleColors, bestParticleIndex, particleBoostingRounds, trainingTimes, predictionHistory, elapsedTime
