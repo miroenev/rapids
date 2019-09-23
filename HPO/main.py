@@ -60,10 +60,8 @@ def main(args):
     _,_, t_scaleTest = rl.scale_dataframe_inplace ( testData_cDF, trainMeans, trainSTDevs )
     
     # launch HPO on Dask
-    
-    # TODO: fix number of particles parameter
-    nWorkers = 4
-    nParticles = 2*nWorkers**2
+    # TODO: argument parser nParticles
+    nParticles = 32
     
     # TODO: add ranges to argparser
     paramRanges = { 0: ['max_depth', 3, 15, 'int'],
@@ -71,12 +69,11 @@ def main(args):
                     2: ['lambda', 0, 1, 'float'] }
     
     accuracies, particles, velocities, particleSizes, particleColors, \
-    bestParticleIndex, particleBoostingRounds, trainingTimes, _, elapsedTime = rl.run_hpo(client, args.num_timesteps, 
-                                                                                      nParticles,
-                                                                                      nWorkers,
-                                                                                      paramRanges, 
-                                                                                      trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF,
-                                                                                      plotFlag=False)
+    bestParticleIndex, bestParamIndex, particleBoostingRounds, trainingTimes, _, elapsedTime = rl.run_hpo(client, args.num_timesteps, 
+                                                                                                          nParticles,
+                                                                                                          paramRanges, 
+                                                                                                          trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF,
+                                                                                                          plotFlag=False)
     
     # TODO: Scaling up: DGX-1, DGX2, Scaling out: Slurm, K8s 
     

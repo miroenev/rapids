@@ -237,7 +237,11 @@ def query_log ( log, queryKey, verbose = False ):
 ''' ---------------------------------------------------------------------
 >  HPO / PARTICLE SWARM
 ----------------------------------------------------------------------'''
-def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters = 3, plotFlag = True):
+def initialize_particle_swarm ( nTimesteps, nParticles, paramRanges, nParameters = 3, randomSeed = None, plotFlag = True):
+    
+    if randomSeed is not None:
+        np.random.seed(randomSeed)
+
     accuracies = np.zeros( ( nTimesteps, nParticles) )
     bestParticleIndex = {}
 
@@ -247,29 +251,44 @@ def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters =
     particleBoostingRounds = np.zeros((nTimesteps, nParticles))
     
     # initial velocity is one
-    velocities[0, :, :] = np.ones( ( nParticles, nParameters ) ) * .25
+    velocities[0, :, :] = np.ones( ( nParticles, nParameters ) ) * .15
     
     # randomly initialize particle colors
     particleColors = np.random.uniform( size = (1, nParticles, 3) )
 
     # best initialized to middle [ fictional particle ] -- is this necessary
     bestParticleIndex[0] = -1
-        
+                
+    # grid initialize particles    
+    nDivisions = int(np.sqrt(nParticles))
+
     # grid initialize particles
-    x = np.linspace( paramRanges[0][1], paramRanges[0][2], nWorkers)
-    y = np.linspace( paramRanges[1][1], paramRanges[1][2], nWorkers)
-    z = np.linspace( paramRanges[2][1], paramRanges[2][2], nWorkers)
+    x = np.linspace( paramRanges[0][1], paramRanges[0][2], nDivisions)
+    y = np.linspace( paramRanges[1][1], paramRanges[1][2], nDivisions)
+    z = np.linspace( paramRanges[2][1], paramRanges[2][2], nDivisions)
 
     xx, yy, zz = np.meshgrid(x,y,z, indexing='xy')
+    xyz = np.dstack([xx.reshape(1,-1)[0], yy.reshape(1,-1)[0], zz.reshape(1,-1)[0]])[0]
 
-    xS = xx.reshape(1,-1)[0]
-    yS = yy.reshape(1,-1)[0]
-    zS = zz.reshape(1,-1)[0]
+    # only retain particles along parameter boundaries
+    boundaryPointIndexes = []
+    for iPoint in range ( xyz.shape[0] ):
+        if ( xyz[iPoint,0] == paramRanges[0][1] or xyz[iPoint,0] == paramRanges[0][2]) or \
+            ( xyz[iPoint,1] == paramRanges[1][1] or xyz[iPoint,1] == paramRanges[1][2]) or \
+            ( xyz[iPoint,2] == paramRanges[2][1] or xyz[iPoint,2] == paramRanges[2][2]):
+            boundaryPointIndexes += [iPoint]
+        else:
+            pass
+
+    stepSize = np.max( (1, len(boundaryPointIndexes)//nParticles ))
     
+    # randomly select nParticles from the boundary points
+    boundaryPoints = np.random.permutation( boundaryPointIndexes )[0:nParticles]
+
     # clip middle particles
-    particles[0, :, 0] = np.hstack([xS[-nWorkers**2:], xS[:nWorkers**2]])
-    particles[0, :, 1] = np.hstack([yS[-nWorkers**2:], yS[:nWorkers**2]])
-    particles[0, :, 2] = np.hstack([zS[-nWorkers**2:], zS[:nWorkers**2]])
+    particles[0, :, 0] = xyz[boundaryPoints, 0]
+    particles[0, :, 1] = xyz[boundaryPoints, 1]
+    particles[0, :, 2] = xyz[boundaryPoints, 2]
     
     if plotFlag:
         ipv.figure()
@@ -282,7 +301,7 @@ def initalize_hpo ( nTimesteps, nParticles, nWorkers, paramRanges, nParameters =
     return particles, velocities, accuracies, bestParticleIndex, globalBestParticleParams, particleBoostingRounds, particleColors
 
 
-def update_particles( paramRanges, particlesInTimestep, velocitiesInTimestep, bestParamsIndex, globalBestParams, sBest = .75, sExplore = .25 , deltaTime = 1, randomSeed = None):
+def update_particles( paramRanges, particlesInTimestep, velocitiesInTimestep, bestParamsIndex, globalBestParams, sBest = .85, sExplore = .1 , deltaTime = 1, randomSeed = None):
     
     nParticles = particlesInTimestep.shape[ 0 ]
     nParameters = particlesInTimestep.shape[ 1 ]    
@@ -293,7 +312,7 @@ def update_particles( paramRanges, particlesInTimestep, velocitiesInTimestep, be
         np.random.seed(randomSeed)
         
     # move to best + explore | globalBest + personalBest
-    velocitiesInTimestep += sBest * ( globalBestRepeated - particlesInTimestep ) \
+    velocitiesInTimestep += 0. * velocitiesInTimestep + sBest * ( globalBestRepeated - particlesInTimestep ) \
                             + sExplore * ( np.random.randn( nParticles, nParameters ) )
     
     particlesInTimestep += velocitiesInTimestep * deltaTime 
@@ -347,22 +366,22 @@ def test_model_hpo ( trainedModelGPU, trainingTime, testData_cDF, testLabels_cDF
     return predictionsGPU, trainedModelGPU.best_iteration, trainingTime, time.time() - startTime
 
 
-def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, randomSeed = 0, plotFlag = True):
+def run_hpo ( daskClient, nTimesteps, nParticles, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, randomSeed = 0, plotFlag = True):
     
     pandasTestLabels = testLabels_cDF.to_pandas()
 
-    if daskClient is not None:        
+    if daskClient is not None:
         scatteredData_future = daskClient.scatter( [ trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF ], broadcast = True )
     
     trainData_cDF_future = scatteredData_future[0]; trainLabels_cDF_future = scatteredData_future[1]
     testData_cDF_future = scatteredData_future[2]; testLabels_cDF_future = scatteredData_future[3]
     
     particles, velocities, accuracies, bestParticleIndex, \
-        globalBestParticleParams, particleBoostingRounds, particleColors = initalize_hpo ( nTimesteps = nTimesteps, 
-                                                                                           nParticles = nParticles, 
-                                                                                           nWorkers = nWorkers, 
-                                                                                           paramRanges = paramRanges,
-                                                                                           plotFlag = plotFlag)
+        globalBestParticleParams, particleBoostingRounds, particleColors = initialize_particle_swarm ( nTimesteps = nTimesteps, 
+                                                                                                      nParticles = nParticles,
+                                                                                                      paramRanges = paramRanges,
+                                                                                                      randomSeed = randomSeed, 
+                                                                                                      plotFlag = plotFlag)
     globalBestAccuracy = 0
     
     trainingTimes = np.zeros (( nTimesteps, nParticles ))    
@@ -442,7 +461,7 @@ def run_hpo ( daskClient, nTimesteps, nParticles, nWorkers, paramRanges, trainDa
     
     print( 'elapsed time : {}'.format(elapsedTime) )
     
-    return accuracies, particles, velocities, particleSizes, particleColors, bestParticleIndex, particleBoostingRounds, trainingTimes, predictionHistory, elapsedTime
+    return accuracies, particles, velocities, particleSizes, particleColors, bestParticleIndex, bestParamIndex, particleBoostingRounds, trainingTimes, predictionHistory, elapsedTime
 
 def viz_search( accuracies, particleBoostingRounds ):
     fig = plt.figure(figsize=(30,20))
