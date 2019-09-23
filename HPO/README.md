@@ -44,3 +44,14 @@ TODO - generate figures that capture benefit of GPU scaling
 e.g., http://127.0.0.1:8888
 
 > In rapids/HPO open the rapids_dask_hpo.ipynb
+
+## Using the CLI
+
+1 -- get help on CLI options
+
+``` python main.py --help```
+
+2 -- launch experiments
+
+```python main.py --num_gpus 4 --num_timesteps 10 --coil_type 'helix'```
+
