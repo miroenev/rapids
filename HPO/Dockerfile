@@ -12,6 +12,8 @@ RUN source activate rapids && conda install -c conda-forge python-graphviz
 
 RUN source activate rapids && conda install -y -c rapidsai cupy
 
+RUN source activate rapids && pip install git+https://github.com/dask/dask-kubernetes.git
+
 RUN source activate rapids && git clone https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
 
 EXPOSE 8888
