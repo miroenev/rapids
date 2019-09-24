@@ -34,9 +34,6 @@ spec:
         cpu: "2"
         memory: 6G
         nvidia.com/gpu: 1
-    env:
-      - name: PRE_RUN_HOOK
-        value: "pip install -e git+https://github.com/supertetelman/rapids.git@k8s#egg=rapids&subdirectory=HPO"
 '''
 
 
