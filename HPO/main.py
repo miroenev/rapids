@@ -3,23 +3,80 @@ import rapids_lib_v10 as rl
 import dask
 from dask import delayed
 from dask_cuda import LocalCUDACluster
+from dask_kubernetes import KubeCluster
 from dask.distributed import Client
 
+from time import sleep # sleep needed to give K8S time for manual scaling
 import argparse
 
-def launch_dask(n_gpus):
-    cluster = LocalCUDACluster(ip="", n_workers=n_gpus)
+
+default_worker_spec_fname = '/worker_spec.yaml'
+default_worker_spec = '''
+# worker-spec.yml
+
+kind: Pod
+metadata:
+  labels:
+    foo: bar
+spec:
+  restartPolicy: Never
+  containers:
+  - image: supertetelman/k8s-rapids-dask:0.9-cuda10.0-runtime-ubuntu18.04
+    imagePullPolicy: IfNotPresent
+    args: [dask-worker,  --nthreads, '1', --no-bokeh, --memory-limit, 6GB, --no-bokeh, --death-timeout, '60']
+    name: dask
+    resources:
+      limits:
+        cpu: "2"
+        memory: 6G
+        nvidia.com/gpu: 1
+      requests:
+        cpu: "2"
+        memory: 6G
+        nvidia.com/gpu: 1
+    env:
+      - name: PRE_RUN_HOOK
+        value: "pip install -e git+https://github.com/supertetelman/rapids.git@k8s#egg=rapids&subdirectory=HPO"
+'''
+
+
+def launch_dask(n_gpus, min_gpus, k8s, adapt, worker_spec):
+    if k8s:
+        if worker_spec is None:
+            worker_spec = default_worker_spec_fname
+            print(f'Creating a default K8S worker spec at {worker_spec}')
+            with open(worker_spec, "w") as yaml_file:
+                yaml_file.write(default_worker_spec)
+                
+        cluster = KubeCluster.from_yaml(worker_spec)
+        if adapt:
+            cluster.adapt(minimum=min_gpus, maximum=n_gpus)
+            print(f'Launching Adaptive K8S Dask cluster with [{min_gpus}, {n_gpus}] workers')
+        else:
+            cluster.scale(n_gpus)
+            print(f'Launching K8S Dask cluster with {n_gpus} workers')
+        sleep(10)
+    else:
+        cluster = LocalCUDACluster(ip="", n_workers=n_gpus)
+        print(f'Launching Local Dask cluster with {n_gpus} GPUs')
+
     client = Client(cluster)
-    print(f'Launching Dask cluster with {n_gpus} GPUs')
     print(client)
-    return client
+    print(cluster)
+    return client, cluster
+
+
+def close_dask(cluster, k8s):
+    if k8s:
+        cluster.scale(0)
+        print("Shutting down Dask Pods")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform hyper-parameter optimization using Dask',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
-    # data generation arguments
+    # Data generation arguments
     parser.add_argument('--coil_type', default='helix', type=str,
                         help='the type of coil to generate the data')
     parser.add_argument('--num_blobs', default=1000, type=int,
@@ -38,12 +95,25 @@ def parse_args():
                         help='percentage of train and test distribution that overlaps')
     
     # HPO arguments
-    parser.add_argument('--num_gpus', default=1, type=int,
-                        help='the number of gpus to use')
     parser.add_argument('--num_timesteps', default=10, type=int,
                         help='the number of timesteps to run HPO')
     parser.add_argument('--num_particles', default=32, type=int,
                         help='the number of particles in the swarm')
+    
+    # Cluster arguments
+    parser.add_argument('--k8s', default=False, dest='k8s', action='store_true',
+                        help='use a KubeCluster instead of LocalCudaCluster')
+    parser.add_argument('--adapt', default=False, dest='adapt', action='store_true',
+                        help='use adaptive scaling of k8s workers [min_gpus, num_gpus]')
+    parser.add_argument('--spec', default=None, type=str,
+                       help='the k8s worker_spec yaml file to use')
+    
+    # Scaling arguments
+    parser.add_argument('--num_gpus', default=1, type=int,
+                        help='the number of workers deployed or maximum workers when using K8S adaptive; each worker gets 1 GPU')
+    parser.add_argument('--min_gpus', default=32, type=int,
+                        help='the minimum number of workers when using adaptive scaling')
+
     
     args = parser.parse_args()
     
@@ -52,7 +122,8 @@ def parse_args():
 
 def main(args):
     
-    client = launch_dask(args.num_gpus)
+    client, cluster = launch_dask(args.num_gpus, args.min_gpus,
+                                  args.k8s, args.adapt, args.spec)
 
     # generate data on the GPU
     data, labels, t_gen = rl.gen_blob_coils( coilType=args.coil_type, shuffleFlag = False, 
@@ -92,6 +163,9 @@ def main(args):
                                                plotFlag=False)
     
     # TODO: Scaling up: DGX-1, DGX2, Scaling out: Slurm, K8s 
+    
+    # Shut down K8S workers
+    close_dask(cluster, args.k8s)
     
     
 if __name__ == '__main__':
