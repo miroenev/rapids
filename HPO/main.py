@@ -21,7 +21,7 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
-  - image: supertetelman/k8s-rapids-dask:0.9-cuda10.0-runtime-ubuntu18.04
+  - image: ericharper/rapids-dask-hpo:latest
     imagePullPolicy: IfNotPresent
     args: [dask-worker,  --nthreads, '1', --no-bokeh, --memory-limit, 6GB, --no-bokeh, --death-timeout, '60']
     name: dask
