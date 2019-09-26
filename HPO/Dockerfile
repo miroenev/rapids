@@ -14,7 +14,7 @@ RUN source activate rapids && conda install -y -c rapidsai cupy
 
 RUN source activate rapids && pip install git+https://github.com/dask/dask-kubernetes.git
 
-RUN source activate rapids && git clone https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
+RUN source activate rapids && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
 
 EXPOSE 8888
 
