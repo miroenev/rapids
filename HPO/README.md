@@ -55,3 +55,20 @@ e.g., http://127.0.0.1:8888
 
 ```python main.py --num_gpus 4 --num_timesteps 10 --coil_type 'helix'```
 
+## Using Kubeflow and Dask-Kubernetes
+
+1 -- install Kubernetes, Ceph, and Kubeflow from [NVIDIA/deepops](https://github.com/NVIDIA/deepops/blob/master/docs/kubernetes-cluster.md)
+
+2 -- navigate to the Kubeflow dashboard, select notebooks and create a new notebook server using the custom container
+
+```ericharper/dask-rapids-hpo:latest```
+
+3 -- change the run command
+
+>\["-c", "/opt/conda/envs/rapids/bin/jupyter lab  --notebook-dir=/ --ip=0.0.0.0 --no-browser --allow-root --port=8888 --NotebookApp.token='' --NotebookApp.password='' --NotebookApp.allow_origin='*' --NotebookApp.base_url=\$\{NB_PREFIX\}"\]
+
+4 -- launch experiments via the notebook or the command line
+```
+!python main.py --k8s --adapt --num_gpus 4 --min_gpus 1 \
+                --num_timesteps 10 --coil_type 'helix'
+```
