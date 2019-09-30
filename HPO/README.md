@@ -61,7 +61,7 @@ e.g., http://127.0.0.1:8888
 
 2 -- navigate to the Kubeflow dashboard, select notebooks and create a new notebook server using the custom container
 
-```ericharper/dask-rapids-hpo:latest```
+```ericharper/rapids-dask-hpo:latest```
 
 3 -- change the run command
 
