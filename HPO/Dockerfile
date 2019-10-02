@@ -18,6 +18,18 @@ RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/dask-k
 
 RUN source activate $CONDA_ENV && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
 
+# There is currently a bug in the jupyterlab-manager that requires install directly from Git
+# When this bug is patched we should remove this piece.
+# I have left the above `jupyter labextension install @jupyter-widgets/jupyterlab-manager && \` for simplicity, but it is an extra step
+RUN source activate $CONDA_ENV && \
+    cd /tmp && \
+    git clone https://github.com/rapidsai/jupyterlab-nvdashboard.git && \
+    cd jupyterlab-nvdashboard && \
+    pip install -e . && \
+    jlpm install && \
+    jlpm run build && \
+    jupyter labextension install . 
+
 EXPOSE 8888
 
 WORKDIR /
