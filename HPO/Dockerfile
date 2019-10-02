@@ -2,7 +2,10 @@ FROM rapidsai/rapidsai:0.9-cuda10.0-runtime-ubuntu18.04
 
 ENV CONDA_ENV rapids
 
-RUN apt update && apt -y upgrade
+RUN source activate $CONDA_ENV && \
+    apt-get update && \
+    apt-get install -y screen unzip git vim htop font-manager && \
+    rm -rf /var/lib/apt/*
 
 RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipywidgets
 RUN source activate $CONDA_ENV && jupyter labextension install @jupyter-widgets/jupyterlab-manager
