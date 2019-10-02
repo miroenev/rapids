@@ -7,15 +7,15 @@ RUN source activate $CONDA_ENV && \
     apt-get install -y screen unzip git vim htop font-manager && \
     rm -rf /var/lib/apt/*
 
-RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipywidgets
+RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipywidgets && conda clean -yac *
 RUN source activate $CONDA_ENV && jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
-RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipyvolume
+RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipyvolume && conda clean -yac *
 RUN source activate $CONDA_ENV && jupyter labextension install ipyvolume
 
-RUN source activate $CONDA_ENV && conda install -c conda-forge python-graphviz
+RUN source activate $CONDA_ENV && conda install -c conda-forge python-graphviz && conda clean -yac *
 
-RUN source activate $CONDA_ENV && conda install -y -c rapidsai cupy
+RUN source activate $CONDA_ENV && conda install -y -c rapidsai cupy && conda clean -yac *
 
 RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/dask-kubernetes.git
 
