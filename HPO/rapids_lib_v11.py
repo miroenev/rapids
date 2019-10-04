@@ -16,6 +16,20 @@ import dask
 from dask import delayed
 import xgboost
 
+rapidsPrimary1 = [ 116/255., 0/255., 255/255., 1]
+nvidiaGreen = [ 100/255., 225/255., 0., 1]
+rapidsPrimary2 = [ 255/255., 181/255., 0/255., 1]
+rapidsPrimary3 = [ 210/255., 22/255., 210/255., 1]
+rapidsSecondary4 = [ 0., 0., 0., 1]
+rapidsSecondary5 = [ 102/255., 102/255., 102/255., 1]
+
+rapidsColors = { 0: rapidsPrimary1,
+                 1: nvidiaGreen,
+                 2: rapidsPrimary2,
+                 3: rapidsPrimary3,
+                 4: rapidsSecondary4,
+                 5: rapidsSecondary5 }
+
 ''' -------------------------------------------------------------------------
 >  DATA GEN [ CPU ]
 ------------------------------------------------------------------------- '''
@@ -38,6 +52,7 @@ def gen_two_coils ( nPoints, coilType, coilDensity ):
     return coil1, coil2
 
 def plot_dataset_variants ( nPoints = 100 ):
+    global rapidsColors
     fig = plt.figure(figsize=(10,10))
         
     hCoil1, hCoil2 = gen_two_coils ( nPoints, coilType = 'helix', coilDensity = 5)
@@ -46,16 +61,16 @@ def plot_dataset_variants ( nPoints = 100 ):
     # double helix
     ax = fig.add_subplot(211, projection='3d')
     ax.plot( bCoil1[:,0], bCoil1[:,1], bCoil1[:,2], 'gray', lw=1)
-    ax.scatter( bCoil1[:,0], bCoil1[:,1], bCoil1[:,2], 'lightgreen')
+    ax.scatter( bCoil1[:,0], bCoil1[:,1], bCoil1[:,2], color =rapidsColors[0])
     ax.plot( bCoil2[:,0], bCoil2[:,1], bCoil2[:,2], 'gray', lw=1)
-    ax.scatter( bCoil2[:,0], bCoil2[:,1], bCoil2[:,2], color='purple')
+    ax.scatter( bCoil2[:,0], bCoil2[:,1], bCoil2[:,2], color = rapidsColors[1])
 
     ax2 = fig.add_subplot(212, projection='3d')    
     # whirl
     ax2.plot( hCoil1[:,0], hCoil1[:,1], hCoil1[:,2], 'gray', lw=1)
-    ax2.scatter( hCoil1[:,0], hCoil1[:,1], hCoil1[:,2], 'lightgreen')
+    ax2.scatter( hCoil1[:,0], hCoil1[:,1], hCoil1[:,2], color = rapidsColors[0])
     ax2.plot( hCoil2[:,0], hCoil2[:,1], hCoil2[:,2], 'gray', lw=1)
-    ax2.scatter( hCoil2[:,0], hCoil2[:,1], hCoil2[:,2], color='purple')
+    ax2.scatter( hCoil2[:,0], hCoil2[:,1], hCoil2[:,2], color = rapidsColors[1])
     
     plt.show()
     
@@ -102,56 +117,6 @@ def generate_blobs ( nBlobPoints = 100,  coordinates = [],
         else: data = cupy.concatenate((data, clusterData))            
 
     return data, labels, time.time() - startTime
-
-def ipv_plot_coils ( coil1, coil2, maxSamplesToPlot = 10000):
-    assert( type(coil1) == np.ndarray and type(coil2) == np.ndarray)    
-    maxSamplesToPlot = min( ( coil1.shape[0], maxSamplesToPlot ) )
-    stride = np.max((1, coil1.shape[0]//maxSamplesToPlot))
-    
-    print( '\t plotting data - stride = {} '.format( stride ) )
-    ipv.figure()
-    ipv.scatter( coil1[::stride,0], coil1[::stride,1], coil1[::stride,2], size = .5, marker = 'sphere', color = 'lightgreen')
-    ipv.scatter( coil2[::stride,0], coil2[::stride,1], coil2[::stride,2], size = .5, marker = 'sphere', color = 'purple')
-    ipv.pylab.squarelim()
-    ipv.show()
-    
-    
-def plot_train_test ( trainData, trainLabels, testData, testLabels, maxSamplesToPlot = 10000):    
-    
-    minStride = 2
-    trainStride = trainData.shape[0] // maxSamplesToPlot
-    if trainStride % minStride != 0:
-        trainStride += 1
-    testStride = testData.shape[0] // maxSamplesToPlot
-    if testStride % minStride != 0:
-        testStride += 1
-        
-    strideStepTrain = np.max((minStride, trainStride))
-    strideStepTest = np.max((minStride, testStride))
-
-    coil1TrainData = trainData[0::strideStepTrain].to_pandas().values.astype( 'float64')
-    coil2TrainData = trainData[1::strideStepTrain].to_pandas().values.astype( 'float64')
-    coil1TestData = testData[0::strideStepTest].to_pandas().values.astype( 'float64')
-    coil2TestData = testData[1::strideStepTest].to_pandas().values.astype( 'float64')
-
-    ipv.figure()
-    
-    # train data
-    ipv.scatter(coil1TrainData[:,0], coil1TrainData[:,1], coil1TrainData[:,2], size = .25, color='lightgreen', marker='sphere')
-    ipv.scatter(coil2TrainData[:,0], coil2TrainData[:,1], coil2TrainData[:,2], size = .25, color='purple', marker='sphere')
-
-    # test data overlay on train data 
-    #ipv.scatter(coil1TestData[:,0], coil1TestData[:,1], coil1TestData[:,2], size = .1, color='lightgray', marker='sphere')
-    #ipv.scatter(coil2TestData[:,0], coil2TestData[:,1], coil2TestData[:,2], size = .1, color='lightgray', marker='sphere')
-
-    # test data callout
-    offset = np.max((coil1TrainData[:,2])) * 3
-    ipv.scatter(coil1TestData[:,0], coil1TestData[:,1], coil1TestData[:,2] + offset, size = .25, color='lightgreen', marker='sphere')
-    ipv.scatter(coil2TestData[:,0], coil2TestData[:,1], coil2TestData[:,2] + offset, size = .25, color='purple', marker='sphere')
-    
-    ipv.pylab.squarelim()
-    ipv.show()
-    
     
 def gen_blob_coils ( nBlobPoints = 1000, 
                      nCoordinates = 400, 
@@ -200,11 +165,12 @@ def gen_blob_coils ( nBlobPoints = 1000,
     print( 'time to generate data on GPU = {}'.format( elapsedTime ) )
     
     if plotFlag:        
-        ipv_plot_coils( cupy.asnumpy(coil1_blobs), cupy.asnumpy(coil2_blobs), maxSamplesToPlot = maxSamplesToPlot )
+        ipv_plot_coils( cupy.asnumpy(coil1_blobs), cupy.asnumpy(coil2_blobs), 
+                        maxSamplesToPlot = maxSamplesToPlot )
     
     return data_cDF, labels_cDF, elapsedTime
 
-def convert_to_cuDFs ( data, labels ): # consider dlpack
+def convert_to_cuDFs ( data, labels ):
     '''  build cuda DataFrames for data and labels from cupy arrays '''
     labels_cDF = cudf.DataFrame([('labels', labels)])
     data_cDF = cudf.DataFrame([('x', cupy.asfortranarray(data[:,0])), 
@@ -212,27 +178,151 @@ def convert_to_cuDFs ( data, labels ): # consider dlpack
                                ('z', cupy.asfortranarray(data[:,2]))])
     return data_cDF, labels_cDF
 
-
+def ipv_plot_coils ( coil1, coil2, maxSamplesToPlot = 10000):
+    global rapidsColors
+    assert( type(coil1) == np.ndarray and type(coil2) == np.ndarray)    
+    maxSamplesToPlot = min( ( coil1.shape[0], maxSamplesToPlot ) )
+    stride = np.max((1, coil1.shape[0]//maxSamplesToPlot))
+    
+    print( '\t plotting data - stride = {} '.format( stride ) )
+    ipv.figure()
+    ipv.scatter( coil1[::stride,0], coil1[::stride,1], coil1[::stride,2], 
+                size = .5, marker = 'sphere', color = rapidsColors[0])
+    ipv.scatter( coil2[::stride,0], coil2[::stride,1], coil2[::stride,2], 
+                size = .5, marker = 'sphere', color = rapidsColors[1])
+    ipv.pylab.squarelim()
+    ipv.show()
+           
 ''' ---------------------------------------------------------------------
->  MEASUREMENT / LOGGING
+>  ETL - split and scale
 ----------------------------------------------------------------------'''
-import re
-def update_log( log, logEntries ):
-    for iEntry in logEntries:
-        iLabel = iEntry[0]; iValue = iEntry[1]
-        if iLabel in log.keys():
-            nMatchingKeys = sum([1 for key, value in log.items() if re.search('^'+iLabel, key)])
-            iLabel = iLabel + '_' + str(nMatchingKeys)
-        log[iLabel] = iValue
-        print(' + adding log entry [ {0:25s}:{1:10.5f} s ]'.format(iLabel, iValue))    
-    return log
+def split_train_test_nfolds ( dataDF, labelsDF, nFolds = 10, seed = 1, trainTestOverlap = .01 ):
+    print('splitting data into training and test set')
+    startTime = time.time()
+    
+    nSamplesPerFold = int(dataDF.shape[0] // nFolds)
+    sampleRanges = np.arange(nFolds) * nSamplesPerFold
+        
+    np.random.seed(seed)
+    foldStartInds = np.random.randint(0, nFolds-1, size = nFolds)
+    foldEndInds = foldStartInds + 1 
+    
+    testFold = np.random.randint(0,nFolds-1)
+    trainInds = None; testInds = None
+    
+    for iFold in range( nFolds ):
+        lastFoldFlag = ( iFold == nFolds-1 )
+        if lastFoldFlag: foldInds = np.arange(sampleRanges[iFold], dataDF.shape[0] )
+        else: foldInds = np.arange(sampleRanges[iFold], sampleRanges[iFold+1])
+        
+        if iFold == testFold: testInds = foldInds
+        else:
+            if trainInds is None: trainInds = foldInds
+            else: trainInds = np.concatenate([trainInds, foldInds])
+                
+    # swap subset of train and test samples [ low values require higher model generalization ]
+    nSamplesToSwap = int( nSamplesPerFold * trainTestOverlap )
+    if nSamplesToSwap > 0:
+        trainIndsToSwap = np.random.permutation(trainInds.shape[0])[0:nSamplesToSwap]
+        testIndsToSwap = np.random.permutation(testInds.shape[0])[0:nSamplesToSwap]        
+        trainBuffer = trainInds[trainIndsToSwap].copy()
+        trainInds[trainIndsToSwap] = testInds[testIndsToSwap]
+        testInds[testIndsToSwap] = trainBuffer
+    
+    # build final dataframes
+    trainDF = dataDF.iloc[trainInds]
+    testDF = dataDF.iloc[testInds]
+    trainLabelsDF = labelsDF.iloc[trainInds]
+    testLabelsDF = labelsDF.iloc[testInds]                
+    
+    return trainDF, trainLabelsDF, testDF, testLabelsDF, time.time() - startTime
 
-def query_log ( log, queryKey, verbose = False ):
-    values = [value for key, value in log.items() if re.search('^'+queryKey, key) ]
-    if verbose:
-        print(queryKey, '\n', pd.Series(values).describe(), '\n',)    
-        plt.plot(values, 'x-')
-    return values
+def scale_dataframe_inplace ( targetDF, trainMeans = {}, trainSTDevs = {} ):    
+    print('rescaling data')
+    sT = time.time()
+    for iCol in targetDF.columns:
+        
+        # omit scaling label column
+        if iCol == targetDF.columns[-1] == 'label': continue
+            
+        # compute means and standard deviations for each column [ should skip for test data ]
+        if iCol not in trainMeans.keys() and iCol not in trainSTDevs.keys():            
+            trainMeans[iCol] = targetDF[iCol].mean()
+            trainSTDevs[iCol] = targetDF[iCol].std()
+            
+        # apply scaling to each column
+        targetDF[iCol] = ( targetDF[iCol] - trainMeans[iCol] ) / ( trainSTDevs[iCol] + 1e-10 )
+        
+    return trainMeans, trainSTDevs, time.time() - sT
+
+''' -------------------------------------------------------------------------
+>  VISUALIZE TRAIN & TEST + OVERLAP
+------------------------------------------------------------------------- '''
+
+def plot_train_test ( trainData, trainLabels, testData, testLabels, maxSamplesToPlot = 10000):    
+    global rapidsColors
+    
+    minStride = 2
+    trainStride = trainData.shape[0] // maxSamplesToPlot
+    if trainStride % minStride != 0:
+        trainStride += 1
+    testStride = testData.shape[0] // maxSamplesToPlot
+    if testStride % minStride != 0:
+        testStride += 1
+        
+    strideStepTrain = np.max((minStride, trainStride))
+    strideStepTest = np.max((minStride, testStride))
+
+    coil1TrainData = trainData[0::strideStepTrain].to_pandas().values.astype( 'float64')
+    coil2TrainData = trainData[1::strideStepTrain].to_pandas().values.astype( 'float64')
+    coil1TestData = testData[0::strideStepTest].to_pandas().values.astype( 'float64')
+    coil2TestData = testData[1::strideStepTest].to_pandas().values.astype( 'float64')
+
+    ipv.figure()
+    
+    # train data
+    ipv.scatter(coil1TrainData[:,0], coil1TrainData[:,1], coil1TrainData[:,2], 
+                size = .25, color=rapidsColors[0], marker='sphere')
+    ipv.scatter(coil2TrainData[:,0], coil2TrainData[:,1], coil2TrainData[:,2], 
+                size = .25, color=rapidsColors[1], marker='sphere')
+
+    # test data callout
+    offset = np.max((coil1TrainData[:,2])) * 3
+    ipv.scatter( coil1TestData[:,0], coil1TestData[:,1], coil1TestData[:,2] + offset, 
+                 size = .25, color=rapidsColors[0], marker='sphere')
+    ipv.scatter( coil2TestData[:,0], coil2TestData[:,1], coil2TestData[:,2] + offset, 
+                 size = .25, color=rapidsColors[1], marker='sphere')
+    
+    ipv.pylab.squarelim()
+    ipv.show()
+    
+
+def plot_iid_breaking ( trainData_pDF, testData_pDF, maxSamplesToPlot = 10000 ):
+    global rapidsColors
+    plt.figure(figsize=(50,10))
+    plt.subplot(1,3,1)
+    trainStride = np.max( (1, trainData_pDF.shape[0] // maxSamplesToPlot) )
+    testStride = np.max( (1, testData_pDF.shape[0] // maxSamplesToPlot) )
+    rapidsColors[1] = [ 0, 0, 0, 1]
+    rapidsColors[3] = [ 102/255., 102/255., 102/255., 1]
+    print( f'train data stride {trainStride}, test data stride {testStride}')
+    plt.plot(testData_pDF['x'].iloc[::testStride],'o', color = rapidsColors[1] )
+    plt.plot(trainData_pDF['x'].iloc[::trainStride],'x', color = rapidsColors[3])
+    plt.legend(['testData', 'trainData'])
+    plt.title('x')
+    
+    plt.subplot(1,3,2)
+    plt.plot(testData_pDF['y'].iloc[::testStride],'o', color = rapidsColors[1] )
+    plt.plot(trainData_pDF['y'].iloc[::trainStride],'x', color = rapidsColors[3])
+    plt.legend(['testData', 'trainData'])
+    plt.title('y')
+    
+    plt.subplot(1,3,3)
+    plt.plot(testData_pDF['z'].iloc[::testStride],'o', color = rapidsColors[1] )
+    plt.plot(trainData_pDF['z'].iloc[::trainStride],'x', color = rapidsColors[3])
+    plt.legend(['testData', 'trainData'])
+    plt.title('z')
+    plt.show()   
 
 ''' ---------------------------------------------------------------------
 >  HPO / PARTICLE SWARM
@@ -463,6 +553,10 @@ def run_hpo ( daskClient, nTimesteps, nParticles, paramRanges, trainData_cDF, tr
     
     return accuracies, particles, velocities, particleSizes, particleColors, bestParticleIndex, bestParamIndex, particleBoostingRounds, trainingTimes, predictionHistory, elapsedTime
 
+''' -------------------------------------------------------------------------
+>  HPO VISUALIZATION
+------------------------------------------------------------------------- '''
+
 def viz_search( accuracies, particleBoostingRounds ):
     fig = plt.figure(figsize=(30,20))
     plt.subplot(1,2,1)
@@ -542,86 +636,26 @@ def plot_particle_learning ( nTimesteps, nParticles, testData_pDF, bestParamInde
                                color = colorStack[0, 0, :, :], marker='sphere', size=.25 )
     ipv.show()
     '''
-       
+
+
 ''' ---------------------------------------------------------------------
->  ETL - split and scale
+>  MEASUREMENT / LOGGING
 ----------------------------------------------------------------------'''
-def split_train_test_nfolds ( dataDF, labelsDF, nFolds = 10, seed = 1, trainTestOverlap = .01 ):
-    print('splitting data into training and test set')
-    startTime = time.time()
-    
-    nSamplesPerFold = int(dataDF.shape[0] // nFolds)
-    sampleRanges = np.arange(nFolds) * nSamplesPerFold
-        
-    np.random.seed(seed)
-    foldStartInds = np.random.randint(0, nFolds-1, size = nFolds)
-    foldEndInds = foldStartInds + 1 
-    
-    testFold = np.random.randint(0,nFolds-1)
-    trainInds = None; testInds = None
-    
-    for iFold in range( nFolds ):
-        lastFoldFlag = ( iFold == nFolds-1 )
-        if lastFoldFlag: foldInds = np.arange(sampleRanges[iFold], dataDF.shape[0] )
-        else: foldInds = np.arange(sampleRanges[iFold], sampleRanges[iFold+1])
-        
-        if iFold == testFold: testInds = foldInds
-        else:
-            if trainInds is None: trainInds = foldInds
-            else: trainInds = np.concatenate([trainInds, foldInds])
-                
-    # swap subset of train and test samples [ low values require higher model generalization ]
-    nSamplesToSwap = int( nSamplesPerFold * trainTestOverlap )
-    if nSamplesToSwap > 0:
-        trainIndsToSwap = np.random.permutation(trainInds.shape[0])[0:nSamplesToSwap]
-        testIndsToSwap = np.random.permutation(testInds.shape[0])[0:nSamplesToSwap]        
-        trainBuffer = trainInds[trainIndsToSwap].copy()
-        trainInds[trainIndsToSwap] = testInds[testIndsToSwap]
-        testInds[testIndsToSwap] = trainBuffer
-    
-    # build final dataframes
-    trainDF = dataDF.iloc[trainInds]
-    testDF = dataDF.iloc[testInds]
-    trainLabelsDF = labelsDF.iloc[trainInds]
-    testLabelsDF = labelsDF.iloc[testInds]                
-    
-    return trainDF, trainLabelsDF, testDF, testLabelsDF, time.time() - startTime
+import re
+def update_log( log, logEntries ):
+    for iEntry in logEntries:
+        iLabel = iEntry[0]; iValue = iEntry[1]
+        if iLabel in log.keys():
+            nMatchingKeys = sum([1 for key, value in log.items() if re.search('^'+iLabel, key)])
+            iLabel = iLabel + '_' + str(nMatchingKeys)
+        log[iLabel] = iValue
+        print(' + adding log entry [ {0:25s}:{1:10.5f} s ]'.format(iLabel, iValue))    
+    return log
 
-def plot_iid_breaking ( trainData_cDF, testData_cDF ):
-    plt.figure(figsize=(50,10))
-    plt.subplot(1,3,1)
-    subSample = 100
-    plt.plot(testData_cDF['x'].iloc[::subSample],'o', color=[1,0,0,.5] )
-    plt.plot(trainData_cDF['x'].iloc[::subSample],'x')
-    plt.legend(['testData', 'trainData'])
-    plt.title('x')
-    plt.subplot(1,3,2)
-    plt.plot(testData_cDF['y'].iloc[::subSample],'o', color=[1,0,0,.5] )
-    plt.plot(trainData_cDF['y'].iloc[::subSample],'x')
-    plt.legend(['testData', 'trainData'])
-    plt.title('y')
-    plt.subplot(1,3,3)
-    plt.plot(testData_cDF['z'].iloc[::subSample],'o', color=[1,0,0,.5] )
-    plt.plot(trainData_cDF['z'].iloc[::subSample],'x')
-    plt.legend(['testData', 'trainData'])
-    plt.title('z')
-    plt.show()    
-
-def scale_dataframe_inplace ( targetDF, trainMeans = {}, trainSTDevs = {} ):    
-    print('rescaling data')
-    sT = time.time()
-    for iCol in targetDF.columns:
-        
-        # omit scaling label column
-        if iCol == targetDF.columns[-1] == 'label': continue
-            
-        # compute means and standard deviations for each column [ should skip for test data ]
-        if iCol not in trainMeans.keys() and iCol not in trainSTDevs.keys():            
-            trainMeans[iCol] = targetDF[iCol].mean()
-            trainSTDevs[iCol] = targetDF[iCol].std()
-            
-        # apply scaling to each column
-        targetDF[iCol] = ( targetDF[iCol] - trainMeans[iCol] ) / ( trainSTDevs[iCol] + 1e-10 )
-        
-    return trainMeans, trainSTDevs, time.time() - sT
-
+def query_log ( log, queryKey, verbose = True ):
+    values = [value for key, value in log.items() if re.search('^'+queryKey, key) ]
+    if verbose:
+        print(queryKey, '\n', pd.Series(values).describe(), '\n',)    
+        plt.plot(values, 'x-')
+        plt.title(str(queryKey))
+    return values
