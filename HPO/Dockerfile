@@ -18,8 +18,9 @@ RUN source activate $CONDA_ENV && conda install -c conda-forge python-graphviz &
 RUN source activate $CONDA_ENV && conda install -y -c rapidsai cupy && conda clean -yac *
 
 # There is currently a PR in for dask_kubernetes that adds a lot of new functionality, we are installing directly from there for now
-# XXX: RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/dask-kubernetes.git
-RUN source activate $CONDA_ENV && pip install git+https://github.com/jacobtomlinson/dask-kubernetes.git@spec-cluster
+RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/dask-kubernetes.git
+#RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/distributed.git@master
+#RUN source activate $CONDA_ENV && pip install git+https://github.com/jacobtomlinson/dask-kubernetes.git@spec-cluster
 
 RUN source activate $CONDA_ENV && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone --depth=1 https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
 RUN source activate $CONDA_ENV && mkdir /k8s-rapids-dask && cd /k8s-rapids-dask && git clone --depth=1 https://github.com/supertetelman/k8s-rapids-dask
