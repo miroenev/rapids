@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='rapids_lib',
-      version='10.0',
+      version='11.0',
       description='Helper RAPIDS wrapper',
-      py_modules=['rapids_lib_v10'] 
+      py_modules=['rapids_lib_v11'] 
      )
