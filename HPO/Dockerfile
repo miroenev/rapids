@@ -22,7 +22,7 @@ RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/dask-k
 #RUN source activate $CONDA_ENV && pip install git+https://github.com/dask/distributed.git@master
 #RUN source activate $CONDA_ENV && pip install git+https://github.com/jacobtomlinson/dask-kubernetes.git@spec-cluster
 
-RUN source activate $CONDA_ENV && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone --depth=1 https://github.com/miroenev/rapids && cd rapids/HPO/ && python setup.py install
+RUN source activate $CONDA_ENV && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone https://github.com/miroenev/rapids && cd rapids/HPO/ && git pull && python setup.py install
 RUN source activate $CONDA_ENV && mkdir /k8s-rapids-dask && cd /k8s-rapids-dask && git clone --depth=1 https://github.com/supertetelman/k8s-rapids-dask
 
 # There is currently a bug in the jupyterlab-manager that requires install directly from Git
