@@ -17,6 +17,8 @@ from sklearn import datasets; from sklearn.metrics import confusion_matrix, accu
 
 import dask
 from dask import delayed
+from dask.distributed import as_completed
+
 import xgboost
 
 rapidsPrimary1 = [ 116/255., 0/255., 255/255., 1]
@@ -249,6 +251,200 @@ def enforce_param_bounds_inline ( particleParams, paramRanges  ):
         if paramRanges[iParam][3] == 'int':
             particleParams[ iParam ] = np.round( particleParams[ iParam ] )
     return particleParams
+
+
+def evaluate_particle ( particle, dataFutures, earlyStoppingRounds, retainPredictionsFlag ):    
+
+    # fixed parameters
+    paramsGPU = { 'objective': 'binary:hinge',
+                  'tree_method': 'gpu_hist',
+                  'n_gpus': 1,
+                  'random_state': 0 }
+
+    # TODO: loop over paramRanges instead of hard code
+    paramsGPU['max_depth'] = int( particle['params'][0] )
+    paramsGPU['learning_rate'] = particle['params'][1]
+    paramsGPU['gamma'] = particle['params'][2]
+    paramsGPU['num_boost_rounds'] = 1000
+
+    startTime = time.time()
+
+    trainDMatrix = xgboost.DMatrix( data = dataFutures['trainData'], label = dataFutures['trainLabels'] )
+    testDMatrix = xgboost.DMatrix( data = dataFutures['testData'], label = dataFutures['testLabels'] )
+
+    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, evals = [(testDMatrix, 'test')], 
+                                     params = paramsGPU,
+                                     num_boost_round = paramsGPU['num_boost_rounds'],
+                                     early_stopping_rounds = earlyStoppingRounds,
+                                     verbose_eval = False )
+        
+    predictionsGPU = trainedModelGPU.predict( testDMatrix ).astype(int)
+            
+    elapsedTime = time.time() - startTime
+
+    particle['nTrees'] = trainedModelGPU.best_iteration
+    particle['trainAccuracy'] = 1 - float( trainedModelGPU.eval(trainDMatrix, iteration = 50).split(':')[1] )
+    particle['testAccuracy'] = 1 - float( trainedModelGPU.eval(testDMatrix, iteration = 50).split(':')[1] )    
+    
+    if not retainPredictionsFlag: 
+        predictionsGPU = None
+    
+    particle['predictions'] = predictionsGPU
+    
+    return particle, elapsedTime
+
+
+def update_particle( particle, paramRanges, globalBestParams, personalBestParams, 
+                     wMomentum, wIndividual, wSocial, wExplore, randomSearchMode = False, randomSeed = None ):
+
+    #if randomSeed is not None:
+    #    np.random.seed(randomSeed)    
+    
+    # baseline to compare swarm update versus random search
+    if randomSearchMode:        
+        
+        sampledParams, sampledVelocities = sample_params( paramRanges )
+        #print(f'random-search-update: params {sampledParams} velos: {sampledVelocities}')
+        #newParticleParams = rl.enforce_param_bounds_inline ( sampledParams, paramRanges )        
+        return sampledParams, sampledVelocities
+        
+    # computing update terms for PSO (ref: https://en.wikipedia.org/wiki/Particle_swarm_optimization )
+    inertiaInfluence = particle['velocities'].copy()
+    socialInfluence = ( globalBestParams - particle['params'] )
+    individualInfluence = ( personalBestParams - particle['params'] )
+    
+    newParticleVelocities =    wMomentum    *  inertiaInfluence \
+                             + wIndividual  *  individualInfluence  * np.random.random()   \
+                             + wSocial      *  socialInfluence      * np.random.random()
+    
+    # paramSamples = sample_params(paramRanges)
+    # exploreInfluence = sExplore * ( np.array([paramSamples[0], paramSamples[1], paramSamples[2]]) )
+
+    newParticleParams = particle['params'].copy() + newParticleVelocities
+    newParticleParams = enforce_param_bounds_inline ( newParticleParams, paramRanges )
+            
+    return newParticleParams, newParticleVelocities
+
+
+def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF,
+              wMomentum = .05, wIndividual = .35, wBest = .25, wExplore = .15, earlyStoppingRounds = 50,
+              terminationAccuracy = np.Inf, 
+              randomSeed = 0, 
+              plotFlag = True,
+              retainPredictionsFlag = False ):
+    
+    startTime = time.time()
+    
+    # ----------------------------
+    # scatter data to all workers
+    # ----------------------------
+    if client is not None:
+        scatteredData_future = client.scatter( [ trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF], broadcast = True )
+        
+    dataFutures = { 'trainData'   : scatteredData_future[0], 'trainLabels' : scatteredData_future[1], 
+                    'testData'    : scatteredData_future[2], 'testLabels'  : scatteredData_future[3] }
+    
+    # ----------------------------
+    # initialize HPO strategy 
+    # ----------------------------        
+    def initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag ) :
+        particleParams, particleVelocities, globalBest, particleColors = initialize_particle_swarm ( nParticles, paramRanges, randomSeed, plotFlag )
+        # create particle futures using the initialization positions and velocities    
+        delayedEvalParticles = []
+        for iParticle in range(nParticles):
+            particle = { 'ID': iParticle, 'params': particleParams[iParticle], 'velocities': particleVelocities[iParticle], 'predictions': None }        
+            delayedEvalParticles.append( delayed ( evaluate_particle )( particle.copy(), dataFutures, earlyStoppingRounds, retainPredictionsFlag ))
+        return delayedEvalParticles, globalBest, particleColors
+        
+    # ------------------------------------------------
+    # shared logic for particle evaluation and updates
+    # ------------------------------------------------
+    def eval_and_update ( particleFuture, delayedEvalParticles, particleHistory, paramRanges, globalBest, randomSearchMode, nEvaluations ):
+        # convert particle future to concrete result and collect returned values
+        particle, elapsedTime = particleFuture.result()
+
+        # update hpo strategy meta-parameters -- i.e. swarm global best and particle personal best
+        particleHistory, globalBest = update_bests ( particleHistory, particle, globalBest, nEvaluations, mode['randomSearch'] )
+
+        # update history with this particle's latest contribution/eval
+        particleHistory = update_history_dictionary ( particleHistory, particle, nEvaluations )
+
+        # update particle
+        if randomSearchMode:
+            personalBestParams = None
+        else:
+            personalBestParams = particleHistory[particle['ID']]['personalBestParams']
+            
+        particle['params'], particle['velocities'] = update_particle ( particle, paramRanges,
+                                                                       globalBest['params'], personalBestParams,
+                                                                       wMomentum, wIndividual, wBest, wExplore,
+                                                                       randomSearchMode = randomSearchMode, 
+                                                                       randomSeed = particle['ID'] ) # repeatability
+        return particle.copy(), particleHistory, globalBest
+
+    
+    nEvaluations = 0
+    particleHistory = {}
+    
+    if mode['allowAsyncUpdates'] != True:
+        # ----------------------------
+        # synchronous particle swarm
+        # ----------------------------
+        delayedEvalParticles, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
+        futureEvalParticles = client.compute( delayedEvalParticles )
+        
+        for iEpoch in range (0, nEpochs ):    
+            futureEvalParticles = client.compute( delayedEvalParticles )
+            delayedEvalParticles = []
+            for particleFuture in futureEvalParticles:
+                newParticle, particleHistory, globalBest = eval_and_update ( particleFuture, delayedEvalParticles, particleHistory, paramRanges, globalBest, mode['randomSearch'], nEvaluations )
+
+                # termination conditions 
+                if globalBest['accuracy'] > terminationAccuracy: break
+
+                # append future work for the next instantiation of this particle ( using the freshly updated parameters )
+                delayedEvalParticles.append( delayed ( evaluate_particle )( newParticle, dataFutures, earlyStoppingRounds, retainPredictionsFlag ))
+                
+                nEvaluations += 1
+            # --- 
+            print(f'> on epoch {iEpoch} out of {nEpochs}') 
+    
+    else:
+        # ----------------------------
+        # asynchronous particle swarm
+        # ----------------------------
+        delayedEvalParticles, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
+        futureEvalParticles = client.compute( delayedEvalParticles )        
+        particleFutureSeq = as_completed( futureEvalParticles )
+        
+        for particleFuture in particleFutureSeq:
+            newParticle, particleHistory, globalBest = eval_and_update ( particleFuture, 
+                                                                         delayedEvalParticles, 
+                                                                         particleHistory, 
+                                                                         paramRanges, 
+                                                                         globalBest, 
+                                                                         mode['randomSearch'], 
+                                                                         nEvaluations )
+            # termination conditions 
+            if globalBest['accuracy'] > terminationAccuracy: break
+            if ( nEvaluations // nParticles ) > nEpochs : break
+                
+            # append future work for the next instantiation of this particle ( using the freshly updated parameters )
+            delayedParticle = delayed ( evaluate_particle )( newParticle, dataFutures, earlyStoppingRounds, retainPredictionsFlag )
+            # submit this particle future to the client ( returns a future )
+            futureParticle = client.compute( delayedParticle )
+            # track its completion via the as_completed iterator 
+            particleFutureSeq.add( futureParticle )
+            
+            nEvaluations += 1
+                              
+    elapsedTime = time.time() - startTime
+    
+    print(f"\n\n best accuracy: {globalBest['accuracy']}, by particle: {globalBest['particleID']} on eval: {globalBest['iEvaluation']} ")
+    print(f" best parameters: {format_params( globalBest['params'], globalBest['nTrees'] )}, \n elapsed time: {elapsedTime:.2f} seconds")
+    
+    return particleHistory, globalBest, elapsedTime
+
 
 def update_bests ( particleHistory, particle, globalBest, numEvaluations = -1, randomSearchMode = False, printPersonalBestUpdates = False ):
     

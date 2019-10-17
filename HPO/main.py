@@ -1,4 +1,7 @@
-import rapids_lib_v10 as rl
+import data_utils # load datasets (or generate data) on the gpu
+import swarm # particle swarm implementation
+
+import cudf
 
 import dask
 from dask import delayed
@@ -70,45 +73,52 @@ def close_dask(cluster, k8s):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Perform hyper-parameter optimization using Dask',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(description='Perform hyper-parameter optimization using Dask', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
     # Data generation arguments
-    parser.add_argument('--coil_type', default='helix', type=str,
+    parser.add_argument('--dataset', default='synthetic', metavar='', type=str,
+                        help="dataset to use: 'synthetic', 'higgs', 'airline'")
+    parser.add_argument('--num_rows', default='10000', metavar='', type=int,
+                        help='number of rows when using real dataset')
+    parser.add_argument('--coil_type', default='helix', metavar='', type=str,
                         help='the type of coil to generate the data')
-    parser.add_argument('--num_blobs', default=1000, type=int,
+    parser.add_argument('--num_blobs', default=1000, metavar='', type=int,
                         help='the number of blobs generated on the GPU')
-    parser.add_argument('--num_coordinates', default=400, type=int,
+    parser.add_argument('--num_coordinates', default=400, metavar='', type=int,
                         help='the number of starting locations of each blob')
-    parser.add_argument('--sdev_scale', default=.3, type=float,
+    parser.add_argument('--sdev_scale', default=.3, metavar='', type=float,
                         help='standard deviation of normals used to generate data')
-    parser.add_argument('--noise_scale', default=.1, type=float,
+    parser.add_argument('--noise_scale', default=.1, metavar='', type=float,
                         help='additional noise')
-    parser.add_argument('--coil_density', default=12.0, type=float,
+    parser.add_argument('--coil_density', default=12.0, metavar='', type=float,
                         help='how tight the coils are')
     
     # ETL arguments
-    parser.add_argument('--train_test_overlap', default=.05,
+    parser.add_argument('--train_test_overlap', default=.05, metavar='', 
                         help='percentage of train and test distribution that overlaps')
     
     # HPO arguments
-    parser.add_argument('--num_timesteps', default=10, type=int,
-                        help='the number of timesteps to run HPO')
-    parser.add_argument('--num_particles', default=32, type=int,
+    parser.add_argument('--num_epochs', default=10, metavar='', type=int,
+                        help='the number of times to evaluate all particles')
+    parser.add_argument('--num_particles', default=32, metavar='', type=int,
                         help='the number of particles in the swarm')
+    parser.add_argument('--async', default=False, dest='async', action='store_true',
+                        help='use asynch')
+    parser.add_argument('--random_search', default=False, dest='random_search', action='store_true',
+                        help='use random search: particles update randomly')
     
     # Cluster arguments
     parser.add_argument('--k8s', default=False, dest='k8s', action='store_true',
                         help='use a KubeCluster instead of LocalCudaCluster')
     parser.add_argument('--adapt', default=False, dest='adapt', action='store_true',
                         help='use adaptive scaling of k8s workers [min_gpus, num_gpus]')
-    parser.add_argument('--spec', default=None, type=str,
+    parser.add_argument('--spec', default=None, metavar='', type=str,
                        help='the k8s worker_spec yaml file to use')
     
     # Scaling arguments
-    parser.add_argument('--num_gpus', default=1, type=int,
+    parser.add_argument('--num_gpus', default=1, metavar='', type=int,
                         help='the number of workers deployed or maximum workers when using K8S adaptive; each worker gets 1 GPU')
-    parser.add_argument('--min_gpus', default=32, type=int,
+    parser.add_argument('--min_gpus', default=32, metavar='', type=int,
                         help='the minimum number of workers when using adaptive scaling')
 
     
@@ -121,45 +131,68 @@ def main(args):
     
     client, cluster = launch_dask(args.num_gpus, args.min_gpus,
                                   args.k8s, args.adapt, args.spec)
-
-    # generate data on the GPU
-    data, labels, t_gen = rl.gen_blob_coils( coilType=args.coil_type, shuffleFlag = False, 
-                                             nBlobPoints = args.num_blobs,  
-                                             nCoordinates = args.num_coordinates, 
-                                             sdevScales = [args.sdev_scale, args.sdev_scale, args.sdev_scale], 
-                                             noiseScale = args.noise_scale,
-                                             coilDensity = args.coil_density,
-                                             plotFlag = False)
     
-    # split
-    trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, t_split = \
-        rl.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap)
+    if args.dataset == 'synthetic':
+        # generate data on the GPU
+        data, labels, t_gen = data_utils.gen_blob_coils( coilType=args.coil_type, shuffleFlag = False, 
+                                                         nBlobPoints = args.num_blobs,  
+                                                         nCoordinates = args.num_coordinates, 
+                                                         sdevScales = [args.sdev_scale,
+                                                                       args.sdev_scale,
+                                                                       args.sdev_scale], 
+                                                         noiseScale = args.noise_scale,
+                                                         coilDensity = args.coil_density,
+                                                         plotFlag = False)
 
-    # apply standard scaling
-    trainMeans, trainSTDevs, t_scaleTrain = rl.scale_dataframe_inplace ( trainData_cDF )
-    _, _, t_scaleTest = rl.scale_dataframe_inplace ( testData_cDF, trainMeans, trainSTDevs )
+        # split
+        trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, t_split = \
+            data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap)
+
+        # apply standard scaling
+        trainMeans, trainSTDevs, t_scaleTrain = data_utils.scale_dataframe_inplace ( trainData_cDF )
+        _, _, t_scaleTest = data_utils.scale_dataframe_inplace ( testData_cDF, trainMeans, trainSTDevs )
+        
+    
+    # load data into GPU
+    elif args.dataset =="higgs":
+        df = data_utils.prepare_higgs("data/", args.num_rows)
+    elif args.dataset == "airline":
+        df = data_utils.prepare_airline("data/", args.num_rows)
+
+    # convert to cuda dataframe
+    if args.dataset == "higgs" or args.dataset == "airline":
+        trainData_cDF = cudf.DataFrame.from_pandas(df.X_train)
+        testData_cDF = cudf.DataFrame.from_pandas(df.X_test)
+        trainLabels_cDF = cudf.DataFrame.from_pandas(df.y_train.to_frame())
+        testLabels_cDF = cudf.DataFrame.from_pandas(df.y_test.to_frame())
     
     # launch HPO on Dask
+    nEpochs = args.num_epochs
     nParticles = args.num_particles
+    allowAsync = args.async
+    randomSearch = args.random_search
     
     # TODO: add ranges to argparser
-    paramRanges = { 0: ['max_depth', 3, 15, 'int'],
+    paramRanges = { 0: ['max_depth', 3, 20, 'int'],
                     1: ['learning_rate', .001, 1, 'float'],
-                    2: ['lambda', 0, 1, 'float'] }
+                    2: ['gamma', 0, 2, 'float'] }
     
-    accuracies, particles, velocities, particleSizes, particleColors, \
-    bestParticleIndex, bestParamIndex, particleBoostingRounds, \
-    trainingTimes, _, elapsedTime = rl.run_hpo(client,
-                                               args.num_timesteps,
+    mode = {'allowAsyncUpdates': args.async, 'randomSearch': args.random_search }
+    
+    particleHistory, globalBest, elapsedTime = swarm.run_hpo(client,
+                                               mode,
                                                nParticles,
+                                               nEpochs,
                                                paramRanges,
                                                trainData_cDF,
                                                trainLabels_cDF,
                                                testData_cDF,
                                                testLabels_cDF,
+                                               wMomentum = .05, 
+                                               wIndividual = .25,
+                                               wBest = .45, 
+                                               wExplore = 0,
                                                plotFlag=False)
-    
-    # TODO: Scaling up: DGX-1, DGX2, Scaling out: Slurm, K8s 
     
     # Shut down K8S workers
     close_dask(cluster, args.k8s)
