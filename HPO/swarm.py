@@ -175,8 +175,8 @@ def sorted_eval_frequency_per_particle ( particleHistory ):
 
 def sample_params (paramRanges, randomSeed = None):
     
-    if randomSeed:
-        np.random.seed(randomSeed)
+    #if randomSeed:
+    #    np.random.seed(randomSeed)
     
     paramSamples = []
     velocitySamples = []
@@ -250,7 +250,7 @@ def enforce_param_bounds_inline ( particleParams, paramRanges  ):
             particleParams[ iParam ] = np.round( particleParams[ iParam ] )
     return particleParams
 
-def update_bests ( particleHistory, particle, globalBest, numEvaluations = -1, randomSearchMode = False, printPersonalBestUpdates = True ):
+def update_bests ( particleHistory, particle, globalBest, numEvaluations = -1, randomSearchMode = False, printPersonalBestUpdates = False ):
     
     # check to see if current particle is new global best
     if particle['testAccuracy'] > globalBest['accuracy']:
@@ -266,7 +266,8 @@ def update_bests ( particleHistory, particle, globalBest, numEvaluations = -1, r
         particleHistory = initialize_particle_history ( particle['ID'], particle['params'], particleHistory )
             
     if randomSearchMode:
-        print('random-search-mode : skipping updates to personal best')
+        #print('random-search-mode : skipping updates to personal best')
+        pass
     else:
         # update personal best
         if particle['testAccuracy'] > particleHistory[particle['ID']]['personalBestAccuracyTest']:
