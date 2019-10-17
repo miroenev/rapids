@@ -1,6 +1,6 @@
-<img width = 85% src='rapids_motivation.png'>
+<img width = 85% src='images/rapids_motivation.png'>
 
-<!-- <img width = 75% src='choices.png'> -->
+<!-- <img width = 75% src='images/choices.png'> -->
 
 # Hyperparamter Optimzation using RAPIDS and DASK
 
