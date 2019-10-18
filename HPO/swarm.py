@@ -496,36 +496,45 @@ def update_history_dictionary( particleHistory, particle, numEvaluations, testDa
     return particleHistory
 
 
-def viz_particle_movement( particleHistory, colorStack = [] ):
+def viz_particle_movement( nParticles, particleHistory, initialParticleParams, colorStack = [] ):
     
     sortedBarHeightsDF = sorted_eval_frequency_per_particle ( particleHistory )
-    nParticles = len(particleHistory)
+    
     particleHistoryCopy = copy.deepcopy( particleHistory )
 
     nAnimationFrames = max( sortedBarHeightsDF['nEvals'] )
-
     particleXYZ = np.zeros( ( nAnimationFrames, nParticles, 3 ) )
     lastKnownLocation = {}
-
+    
     for iFrame in range( nAnimationFrames ):
         for iParticle in range( nParticles ):
             if iParticle in particleHistoryCopy.keys():
+                # particle exists in the particleHistory and it has parameters for the current frame
                 if len( particleHistoryCopy[iParticle]['particleParams'] ):
                     particleXYZ[iFrame, iParticle, : ] = particleHistoryCopy[iParticle]['particleParams'].pop(0).copy()
                     lastKnownLocation[iParticle] = particleXYZ[iFrame, iParticle, : ].copy()
                 else:
-                    if iParticle in lastKnownLocation.keys():
-                        particleXYZ[iFrame, iParticle, : ] = lastKnownLocation[iParticle].copy()
-
+                    # particle exists but it's params have all been popped off -- use its last known location
+                    particleXYZ[iFrame, iParticle, : ] = lastKnownLocation[iParticle].copy()
+                    
+            else:
+                # particle does not exist in the particleHistory
+                if iParticle in lastKnownLocation.keys():
+                    # particle has no params in current frame, attempting to use last known location
+                    particleXYZ[iFrame, iParticle, : ] = lastKnownLocation[iParticle].copy()                    
+                else:
+                    # using initial params
+                    particleXYZ[iFrame, iParticle, : ] = initialParticleParams[iParticle].copy()
+                    lastKnownLocation[iParticle] = particleXYZ[iFrame, iParticle, : ].copy()                    
+    
     # TODO: trajectory plot
-
     ipv.figure()
-
+    
     colorStack = np.random.random( ( nParticles, 3) )
     scatterPlots = ipv.scatter( particleXYZ[:, :,0], particleXYZ[:, :,1], particleXYZ[:, :,2], marker='sphere', size=5, color = colorStack )
 
     ipv.animation_control( [scatterPlots ] )
-    ipv.show()
+    ipv.show()    
     
 
 ''' ---------------------------------------------------------------------
