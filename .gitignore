@@ -1,2 +1,4 @@
-kaggleScape*
-TODO.txt
+*.gz
+*.bz2
+*/__pycache__/*
+*/dask-worker-space/*
