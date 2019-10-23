@@ -25,10 +25,8 @@ import pickle
 import os
 import sys
 from enum import Enum
-if sys.version_info[0] >= 3:
-    from urllib.request import urlretrieve  # pylint: disable=import-error,no-name-in-module
-else:
-    from urllib import urlretrieve  # pylint: disable=import-error,no-name-in-module
+
+from urllib.request import urlretrieve
 
 rapidsPrimary1 = [ 116/255., 0/255., 255/255., 1]
 nvidiaGreen = [ 100/255., 225/255., 0., 1]
@@ -47,13 +45,16 @@ rapidsColors = { 0: rapidsPrimary1,
 ''' -------------------------------------------------------------------------
 >  DATA LOADING
 ------------------------------------------------------------------------- '''
-
+def data_progress_hook ( blockNumber, readSize, totalFileSize ):
+    if ( blockNumber % 1000 ) == 0:        
+        print(f' > percent complete: { ( blockNumber * readSize ) / totalFileSize:.2f}\r', end='')
+    return
 
 def download_dataset ( url, localDestination ):
     if not os.path.isfile( localDestination ):
         print(f'no local dataset copy at {localDestination}')
-        print(f'\t downloading dataset... [ this may take a few minutes ] \n\t source: {url}')
-        urlretrieve( url, localURL )
+        print(f' > downloading dataset from: {url}')
+        urlretrieve( url = url, filename = localDestination, reporthook = data_progress_hook )
         
 def load_higgs_dataset (dataPath, nSamplesToLoad):
     
@@ -70,6 +71,7 @@ def load_higgs_dataset (dataPath, nSamplesToLoad):
                'jet_3_pt','jet_3_eta','jet_3_phi','jet_3_b-tag','jet_4_pt','jet_4_eta','jet_4_phi',
                'jet_4_b_tag','m_jj','m_jjj','m_lv','m_jlv','m_bb','m_wbb','m_wwbb']
     
+    print(f"reading HIGGS from local copy [ via pandas reader ]") # TODO fix cudf.read_csv ( compression = 'gzip')
     higgs = pd.read_csv( localDestination, nrows = nSamplesToLoad, header = None, names = columns  )
 
     data = cudf.DataFrame.from_pandas( higgs.iloc[:, 1:] )
@@ -91,6 +93,7 @@ def load_airline_dataset (dataPath, nSamplesToLoad):
              "CRSArrTime", "UniqueCarrier", "FlightNum", "ActualElapsedTime",
              "Origin", "Dest", "Distance", "Diverted", "ArrDelay" ]
 
+    print(f"reading AIRLINE from local copy [ via pandas reader ]") # TODO fix cudf.read_csv ( compression = 'bzip?')
     df = pd.read_csv( localDestination, names = cols, nrows = nSamplesToLoad)
 
     # Encode categoricals as numeric
