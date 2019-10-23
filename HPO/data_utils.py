@@ -49,101 +49,63 @@ rapidsColors = { 0: rapidsPrimary1,
 ------------------------------------------------------------------------- '''
 
 
-class LearningTask(Enum):
-    REGRESSION = 1
-    CLASSIFICATION = 2
-    MULTICLASS_CLASSIFICATION = 3
-
-class Data:  # pylint: disable=too-few-public-methods,too-many-arguments
-    def __init__(self, X_train, X_test, y_train, y_test, 
-                 learning_task, qid_train=None,
-                 qid_test=None,):
-        self.X_train = X_train
-        self.X_test = X_test
-        self.y_train = y_train
-        self.y_test = y_test
+def download_dataset ( url, localDestination ):
+    if not os.path.isfile( localDestination ):
+        print(f'no local dataset copy at {localDestination}')
+        print(f'\t downloading dataset... [ this may take a few minutes ] \n\t source: {url}')
+        urlretrieve( url, localURL )
         
-        self.learning_task = learning_task
-        # For ranking task
-        self.qid_train = qid_train
-        self.qid_test = qid_test
-
-def prepare_higgs(dataset_folder, nrows):
-    url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz'
-    local_url = os.path.join(dataset_folder, os.path.basename(url))
-    pickle_url = os.path.join(dataset_folder,
-                              "higgs" + ("" if nrows is None else "-" + str(nrows)) + ".pkl")
-
-    if os.path.exists(pickle_url):
-        return pickle.load(open(pickle_url, "rb"))
-
-    if not os.path.isfile(local_url):
-        urlretrieve(url, local_url)
-    higgs = pd.read_csv(local_url, nrows=nrows, header = None, 
-                        names= ['label','lepton_pT','lepton_eta','lepton_phi','missing_energy_magnitude','missing_energy_phi','jet_1_pt',
-                             'jet_1_eta','jet_1_phi','jet_1_b_tag','jet_2_pt','jet_2_eta','jet_2_phi','jet_2_b_tag',
-                             'jet_3_pt','jet_3_eta','jet_3_phi','jet_3_b-tag','jet_4_pt','jet_4_eta','jet_4_phi',
-                             'jet_4_b_tag','m_jj','m_jjj','m_lv','m_jlv','m_bb','m_wbb','m_wwbb'] )
-    X = higgs.iloc[:, 1:]
-    y = higgs.iloc[:, 0]
+def load_higgs_dataset (dataPath, nSamplesToLoad):
     
+    startTime = time.time()
+    
+    url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz'
+    localDestination = os.path.join(dataPath, os.path.basename(url))
 
+    download_dataset ( url, localDestination )
+    
+    columns = ['label','lepton_pT','lepton_eta','lepton_phi',
+               'missing_energy_magnitude','missing_energy_phi','jet_1_pt',
+               'jet_1_eta','jet_1_phi','jet_1_b_tag','jet_2_pt','jet_2_eta','jet_2_phi','jet_2_b_tag',
+               'jet_3_pt','jet_3_eta','jet_3_phi','jet_3_b-tag','jet_4_pt','jet_4_eta','jet_4_phi',
+               'jet_4_b_tag','m_jj','m_jjj','m_lv','m_jlv','m_bb','m_wbb','m_wwbb']
+    
+    higgs = pd.read_csv( localDestination, nrows = nSamplesToLoad, header = None, names = columns  )
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=77,
-                                                        test_size=0.2,
-                                                        )
-    data = Data(X_train, X_test, y_train, y_test, LearningTask.CLASSIFICATION)
-    pickle.dump(data, open(pickle_url, "wb"), protocol=4)
-    return data
+    data = cudf.DataFrame.from_pandas( higgs.iloc[:, 1:] )
+    labels = cudf.DataFrame.from_pandas(higgs.iloc[:, 0].to_frame() )
+    
+    timeToLoad = time.time() - startTime
+    return data, labels, timeToLoad
 
-
-def prepare_airline(dataset_folder, nrows):  # pylint: disable=too-many-locals
+def load_airline_dataset (dataPath, nSamplesToLoad):
+    
+    startTime = time.time()
+    
     url = 'http://kt.ijs.si/elena_ikonomovska/datasets/airline/airline_14col.data.bz2'
-    local_url = os.path.join(dataset_folder, os.path.basename(url))
-    pickle_url = os.path.join(dataset_folder,
-                              "airline"
-                              + ("" if nrows is None else "-" + str(nrows)) + ".pkl")
-    if os.path.exists(pickle_url):
-        return pickle.load(open(pickle_url, "rb"))
-    if not os.path.isfile(local_url):
-        urlretrieve(url, local_url)
+    localDestination = os.path.join( dataPath, os.path.basename(url))
 
-    cols = [
-        "Year", "Month", "DayofMonth", "DayofWeek", "CRSDepTime",
-        "CRSArrTime", "UniqueCarrier", "FlightNum", "ActualElapsedTime",
-        "Origin", "Dest", "Distance", "Diverted", "ArrDelay"
-    ]
+    download_dataset ( url, localDestination )
 
-    # load the data as int16
-    dtype = np.int16
+    cols = [ "Year", "Month", "DayofMonth", "DayofWeek", "CRSDepTime",
+             "CRSArrTime", "UniqueCarrier", "FlightNum", "ActualElapsedTime",
+             "Origin", "Dest", "Distance", "Diverted", "ArrDelay" ]
 
-    dtype_columns = {
-        "Year": dtype, "Month": dtype, "DayofMonth": dtype, "DayofWeek": dtype,
-        "CRSDepTime": dtype, "CRSArrTime": dtype, "FlightNum": dtype,
-        "ActualElapsedTime": dtype, "Distance":
-            dtype,
-        "Diverted": dtype, "ArrDelay": dtype,
-    }
-
-    df =pd.read_csv(local_url,
-                     names=cols, dtype=dtype_columns, nrows=nrows)
+    df = pd.read_csv( localDestination, names = cols, nrows = nSamplesToLoad)
 
     # Encode categoricals as numeric
     for col in df.select_dtypes(['object']).columns:
-        df[col] = df[col].astype("category").cat.codes
+        df[col] = df[col].astype('category').cat.codes.astype( np.float32 )
 
     # Turn into binary classification problem
-    df["ArrDelayBinary"] = 1 * (df["ArrDelay"] > 0)
+    df["ArrDelayBinary"] = 1. * (df["ArrDelay"] > 0)
 
-    X = df[df.columns.difference(["ArrDelay", "ArrDelayBinary"])]
-    y = df["ArrDelayBinary"]
-    del df
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=77,
-                                                        test_size=0.2,
-                                                        )
-    data = Data(X_train, X_test, y_train, y_test, LearningTask.CLASSIFICATION)
-    pickle.dump(data, open(pickle_url, "wb"), protocol=4)
-    return data
+    data = cudf.DataFrame.from_pandas( df[df.columns.difference(["ArrDelay", "ArrDelayBinary"])] )
+    labels = cudf.DataFrame.from_pandas( df["ArrDelayBinary"].to_frame() )
+    
+    timeToLoad = time.time() - startTime
+    return data, labels, timeToLoad
+
 
 ''' -------------------------------------------------------------------------
 >  DATA GEN [ CPU ]
@@ -233,18 +195,18 @@ def generate_blobs ( nBlobPoints = 100,  coordinates = [],
 
     return data, labels, time.time() - startTime
     
-def gen_blob_coils ( nBlobPoints = 1000, 
-                     nCoordinates = 400, 
-                     coilType='whirl', 
-                     coilDensity = 6.25, 
-                     sdevScales = [ .05, .05, .05], 
-                     noiseScale = 1/5., 
-                     shuffleFlag = False, 
-                     rSeed = 0, 
-                     plotFlag = True,
-                     maxSamplesToPlot = 50000):
+def generate_dataset ( coilType = 'helix',
+                       nSamples = 100000, 
+                       coilDensity = 12,
+                       sdevScales = [ .3, .3, .3], 
+                       noiseScale = 1/10.,
+                       shuffleFlag = False, 
+                       rSeed = 0 ):
     
     startTime = time.time()
+    
+    nCoordinates = 400
+    nBlobPoints = ( nSamples // 2 ) // nCoordinates
     
     coil1, coil2 = gen_two_coils ( nCoordinates, coilType = coilType, coilDensity = coilDensity )
     
@@ -276,13 +238,7 @@ def gen_blob_coils ( nBlobPoints = 1000,
         labels = labels[shuffledInds]
     
     data_cDF, labels_cDF = convert_to_cuDFs ( data, labels )
-    elapsedTime = time.time() - startTime
-    print( 'time to generate data on GPU = {}'.format( elapsedTime ) )
-    
-    if plotFlag:        
-        ipv_plot_coils( cupy.asnumpy(coil1_blobs), cupy.asnumpy(coil2_blobs), 
-                        maxSamplesToPlot = maxSamplesToPlot )
-    
+    elapsedTime = time.time() - startTime    
     return data_cDF, labels_cDF, elapsedTime
 
 def convert_to_cuDFs ( data, labels ):
@@ -344,12 +300,11 @@ def split_train_test_nfolds ( dataDF, labelsDF, nFolds = 10, seed = 1, trainTest
         trainInds[trainIndsToSwap] = testInds[testIndsToSwap]
         testInds[testIndsToSwap] = trainBuffer
     
-    # build final dataframes
+    # build final dataframes    
     trainDF = dataDF.iloc[trainInds]
     testDF = dataDF.iloc[testInds]
     trainLabelsDF = labelsDF.iloc[trainInds]
-    testLabelsDF = labelsDF.iloc[testInds]                
-    
+    testLabelsDF = labelsDF.iloc[testInds]
     return trainDF, trainLabelsDF, testDF, testLabelsDF, time.time() - startTime
 
 def scale_dataframe_inplace ( targetDF, trainMeans = {}, trainSTDevs = {} ):    

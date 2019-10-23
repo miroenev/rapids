@@ -57,32 +57,6 @@ def viz_search( accuracies, particleBoostingRounds ):
     plt.xlabel('particle'); plt.ylabel('timestep')
     plt.show()
     
-def hpo_animate ( particles, particleSizes, particleColors, paramRanges, nTimesteps = 1 ):
-    nParticles = particles.shape[1]
-    colorStack = np.ones((nTimesteps, nTimesteps * nParticles,4)) * .9
-    colorStackLines = np.ones((nTimesteps, nTimesteps * nParticles,4)) * .5
-    for iTimestep in range(nTimesteps):    
-        colorStack[iTimestep, :, 0:3] = numpy.matlib.repmat( particleColors[0,:,:], nTimesteps, 1)
-        colorStackLines[iTimestep, :, 0:3] = numpy.matlib.repmat( particleColors[0,:,:], nTimesteps, 1)
-        colorStackLines[iTimestep, :, 3] = .6 # alpha
-    ipv.figure()
-
-    pplot = ipv.scatter( particles[0:nTimesteps,:,0],
-                         particles[0:nTimesteps,:,1],
-                         particles[0:nTimesteps,:,2], marker='sphere', size=particleSizes, color=colorStack[:,:,:])
-
-    for iParticle in range(nParticles):
-        plines = ipv.plot(particles[0:nTimesteps,iParticle,0], 
-                          particles[0:nTimesteps,iParticle,1], 
-                          particles[0:nTimesteps,iParticle,2], color=colorStackLines[:,iParticle,:] )
-
-    ipv.animation_control( [ pplot ] , interval=600 )
-    ipv.xlim( paramRanges[0][1]-.5, paramRanges[0][2]+.5 )
-    ipv.ylim( paramRanges[1][1]-.1, paramRanges[1][2]+.1 )
-    ipv.zlim( paramRanges[2][1]-.1, paramRanges[2][2]+.1 )
-    ipv.show()    
-    
-    
 def plot_particle_learning ( nTimesteps, nParticles, testData_pDF, bestParamIndex, predictionHistory ):
     
     nTestSamples = testData_pDF.shape[0]
@@ -165,9 +139,8 @@ def plot_eval_distribution( particleHistory, globalBestParticleID, showStats = F
 def sorted_eval_frequency_per_particle ( particleHistory ):
     barHeights = {}
     for particleKey in particleHistory.keys():
-        barHeights[particleKey] = len( particleHistory[particleKey]['numEvaluations'] )
-
-    
+        if isinstance( particleKey, int ):
+            barHeights[particleKey] = len( particleHistory[particleKey]['numEvaluations'] )
 
     barHeightsDF = pd.DataFrame.from_dict( data = barHeights, columns = ['nEvals'], orient='index' )
 
@@ -176,7 +149,6 @@ def sorted_eval_frequency_per_particle ( particleHistory ):
 
 
 def sample_params (paramRanges, randomSeed = None):
-    
     #if randomSeed:
     #    np.random.seed(randomSeed)
     
@@ -198,7 +170,7 @@ def sample_params (paramRanges, randomSeed = None):
         
     return np.array(paramSamples), np.array( velocitySamples)
 
-def initialize_particle_swarm ( nParticles, paramRanges, randomSeed = None, plotFlag = True ):
+def initialize_particle_swarm ( nParticles, paramRanges, randomSeed = None, plotFlag = False ):
     
     if randomSeed is not None:
         np.random.seed(randomSeed)
@@ -224,8 +196,12 @@ def initialize_particle_swarm ( nParticles, paramRanges, randomSeed = None, plot
         quiverSizes = np.clip( np.linalg.norm( velocities, axis = 1 ), 5, 15)
         
         ipv.figure()
-        ipv.quiver( particles[:,0], particles[:,1], particles[:,2], velocities[:,0], velocities[:,1], velocities[:,2], color = particleColors, size = quiverSizes)
-        ipv.xlim( paramRanges[0][1], paramRanges[0][2] );  ipv.ylim( paramRanges[1][1], paramRanges[1][2] );  ipv.zlim( paramRanges[2][1], paramRanges[2][2] )
+        ipv.quiver( particles[:,0], particles[:,1], particles[:,2], 
+                    velocities[:,0], velocities[:,1], velocities[:,2], 
+                    color = particleColors, size = quiverSizes)
+        ipv.xlim( paramRanges[0][1], paramRanges[0][2] )
+        ipv.ylim( paramRanges[1][1], paramRanges[1][2] )
+        ipv.zlim( paramRanges[2][1], paramRanges[2][2] )
         ipv.show()
         
     return particleParams, particleVelocities, globalBest, particleColors
@@ -296,19 +272,18 @@ def evaluate_particle ( particle, dataFutures, earlyStoppingRounds, retainPredic
 
 def update_particle( particle, paramRanges, globalBestParams, personalBestParams, 
                      wMomentum, wIndividual, wSocial, wExplore, randomSearchMode = False, randomSeed = None ):
-
-    #if randomSeed is not None:
-    #    np.random.seed(randomSeed)    
+    ''' 
+    # TODO: debug dask caching [?] attempting to use a seed produces the same sequence of random samples
+    if randomSeed is not None:
+        np.random.seed(randomSeed)    
+    '''
     
     # baseline to compare swarm update versus random search
     if randomSearchMode:        
-        
-        sampledParams, sampledVelocities = sample_params( paramRanges )
-        #print(f'random-search-update: params {sampledParams} velos: {sampledVelocities}')
-        #newParticleParams = rl.enforce_param_bounds_inline ( sampledParams, paramRanges )        
+        sampledParams, sampledVelocities = swarm.sample_params( paramRanges )
         return sampledParams, sampledVelocities
         
-    # computing update terms for PSO (ref: https://en.wikipedia.org/wiki/Particle_swarm_optimization )
+    # computing update terms for particle swarm
     inertiaInfluence = particle['velocities'].copy()
     socialInfluence = ( globalBestParams - particle['params'] )
     individualInfluence = ( personalBestParams - particle['params'] )
@@ -317,20 +292,18 @@ def update_particle( particle, paramRanges, globalBestParams, personalBestParams
                              + wIndividual  *  individualInfluence  * np.random.random()   \
                              + wSocial      *  socialInfluence      * np.random.random()
     
-    # paramSamples = sample_params(paramRanges)
-    # exploreInfluence = sExplore * ( np.array([paramSamples[0], paramSamples[1], paramSamples[2]]) )
-
     newParticleParams = particle['params'].copy() + newParticleVelocities
-    newParticleParams = enforce_param_bounds_inline ( newParticleParams, paramRanges )
+    newParticleParams = swarm.enforce_param_bounds_inline ( newParticleParams, paramRanges )
             
     return newParticleParams, newParticleVelocities
 
 
-def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF,
+def run_hpo ( client, mode, paramRanges, trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF,
+              nParticles, nEpochs,             
               wMomentum = .05, wIndividual = .35, wBest = .25, wExplore = .15, earlyStoppingRounds = 50,
               terminationAccuracy = np.Inf, 
               randomSeed = 0, 
-              plotFlag = True,
+              plotFlag = False,
               retainPredictionsFlag = False ):
     
     startTime = time.time()
@@ -348,13 +321,13 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
     # initialize HPO strategy 
     # ----------------------------        
     def initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag ) :
-        particleParams, particleVelocities, globalBest, particleColors = initialize_particle_swarm ( nParticles, paramRanges, randomSeed, plotFlag )
+        initialParticleParams, initialParticleVelocities, globalBest, particleColors = swarm.initialize_particle_swarm ( nParticles, paramRanges, randomSeed, plotFlag )
         # create particle futures using the initialization positions and velocities    
         delayedEvalParticles = []
         for iParticle in range(nParticles):
-            particle = { 'ID': iParticle, 'params': particleParams[iParticle], 'velocities': particleVelocities[iParticle], 'predictions': None }        
+            particle = { 'ID': iParticle, 'params': initialParticleParams[iParticle], 'velocities': initialParticleVelocities[iParticle], 'predictions': None }        
             delayedEvalParticles.append( delayed ( evaluate_particle )( particle.copy(), dataFutures, earlyStoppingRounds, retainPredictionsFlag ))
-        return delayedEvalParticles, globalBest, particleColors
+        return delayedEvalParticles, initialParticleParams, globalBest, particleColors
         
     # ------------------------------------------------
     # shared logic for particle evaluation and updates
@@ -364,10 +337,10 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
         particle, elapsedTime = particleFuture.result()
 
         # update hpo strategy meta-parameters -- i.e. swarm global best and particle personal best
-        particleHistory, globalBest = update_bests ( particleHistory, particle, globalBest, nEvaluations, mode['randomSearch'] )
+        particleHistory, globalBest = swarm.update_bests ( particleHistory, particle, globalBest, nEvaluations, mode['randomSearch'] )
 
         # update history with this particle's latest contribution/eval
-        particleHistory = update_history_dictionary ( particleHistory, particle, nEvaluations )
+        particleHistory = swarm.update_history_dictionary ( particleHistory, particle, nEvaluations )
 
         # update particle
         if randomSearchMode:
@@ -381,7 +354,6 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
                                                                        randomSearchMode = randomSearchMode, 
                                                                        randomSeed = particle['ID'] ) # repeatability
         return particle.copy(), particleHistory, globalBest
-
     
     nEvaluations = 0
     particleHistory = {}
@@ -390,7 +362,7 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
         # ----------------------------
         # synchronous particle swarm
         # ----------------------------
-        delayedEvalParticles, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
+        delayedEvalParticles, initialParticleParams, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
         futureEvalParticles = client.compute( delayedEvalParticles )
         
         for iEpoch in range (0, nEpochs ):    
@@ -407,28 +379,24 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
                 
                 nEvaluations += 1
             # --- 
-            print(f'> on epoch {iEpoch} out of {nEpochs}') 
+            print(f' > on epoch {iEpoch} out of {nEpochs}') 
     
     else:
         # ----------------------------
         # asynchronous particle swarm
         # ----------------------------
-        delayedEvalParticles, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
+        delayedEvalParticles, initialParticleParams, globalBest, particleColors = initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag )
         futureEvalParticles = client.compute( delayedEvalParticles )        
         particleFutureSeq = as_completed( futureEvalParticles )
         
         for particleFuture in particleFutureSeq:
-            newParticle, particleHistory, globalBest = eval_and_update ( particleFuture, 
-                                                                         delayedEvalParticles, 
-                                                                         particleHistory, 
-                                                                         paramRanges, 
-                                                                         globalBest, 
-                                                                         mode['randomSearch'], 
-                                                                         nEvaluations )
+            newParticle, particleHistory, globalBest = eval_and_update ( particleFuture, delayedEvalParticles, particleHistory, paramRanges, globalBest, mode['randomSearch'], nEvaluations )
+            
             # termination conditions 
             if globalBest['accuracy'] > terminationAccuracy: break
-            if ( nEvaluations // nParticles ) > nEpochs : break
-                
+            approximateEpoch = nEvaluations // nParticles
+            if ( approximateEpoch ) > nEpochs : break
+            
             # append future work for the next instantiation of this particle ( using the freshly updated parameters )
             delayedParticle = delayed ( evaluate_particle )( newParticle, dataFutures, earlyStoppingRounds, retainPredictionsFlag )
             # submit this particle future to the client ( returns a future )
@@ -437,12 +405,18 @@ def run_hpo ( client, mode, nParticles, nEpochs, paramRanges, trainData_cDF, tra
             particleFutureSeq.add( futureParticle )
             
             nEvaluations += 1
+            if nEvaluations % nParticles == 0:
+                print(f' > on approximate epoch {approximateEpoch} out of {nEpochs}') 
                               
     elapsedTime = time.time() - startTime
     
     print(f"\n\n best accuracy: {globalBest['accuracy']}, by particle: {globalBest['particleID']} on eval: {globalBest['iEvaluation']} ")
-    print(f" best parameters: {format_params( globalBest['params'], globalBest['nTrees'] )}, \n elapsed time: {elapsedTime:.2f} seconds")
+    print(f" best parameters: {swarm.format_params( globalBest['params'], globalBest['nTrees'] )}, \n elpased time: {elapsedTime:.2f} seconds")
     
+    particleHistory['initialParams'] = initialParticleParams
+    particleHistory['paramRanges'] = paramRanges
+    particleHistory['particleColors'] = particleColors
+    particleHistory['nParticles'] = nParticles
     return particleHistory, globalBest, elapsedTime
 
 
@@ -496,15 +470,24 @@ def update_history_dictionary( particleHistory, particle, numEvaluations, testDa
     return particleHistory
 
 
-def viz_particle_movement( nParticles, particleHistory, initialParticleParams, colorStack = [] ):
+def viz_particle_movement( particleHistory ):
     
     sortedBarHeightsDF = sorted_eval_frequency_per_particle ( particleHistory )
     
     particleHistoryCopy = copy.deepcopy( particleHistory )
-
+    
+    paramRanges = particleHistoryCopy['paramRanges']
+    particleColors = particleHistoryCopy['particleColors']
+    nParticles = particleHistory['nParticles']
+    initialParticleParams = particleHistoryCopy['initialParams']
+    
     nAnimationFrames = max( sortedBarHeightsDF['nEvals'] )
     particleXYZ = np.zeros( ( nAnimationFrames, nParticles, 3 ) )
     lastKnownLocation = {}
+    
+    
+    # TODO: bestIterationNTrees
+    # particleSizes[ iFrame, iParticle ] = particleHistoryCopy[iParticle]['bestIterationNTrees'].pop(0).copy()
     
     for iFrame in range( nAnimationFrames ):
         for iParticle in range( nParticles ):
@@ -526,14 +509,22 @@ def viz_particle_movement( nParticles, particleHistory, initialParticleParams, c
                     # using initial params
                     particleXYZ[iFrame, iParticle, : ] = initialParticleParams[iParticle].copy()
                     lastKnownLocation[iParticle] = particleXYZ[iFrame, iParticle, : ].copy()                    
-    
-    # TODO: trajectory plot
+        
     ipv.figure()
     
     colorStack = np.random.random( ( nParticles, 3) )
-    scatterPlots = ipv.scatter( particleXYZ[:, :,0], particleXYZ[:, :,1], particleXYZ[:, :,2], marker='sphere', size=5, color = colorStack )
-
-    ipv.animation_control( [scatterPlots ] )
+    scatterPlots = ipv.scatter( particleXYZ[:, :,0], 
+                                particleXYZ[:, :,1], 
+                                particleXYZ[:, :,2], 
+                                marker='sphere', 
+                                size=5,
+                                color = particleColors )
+    
+    ipv.animation_control( [ scatterPlots ] , interval = 400 )
+    ipv.xlim( paramRanges[0][1]-.5, paramRanges[0][2]+.5 )
+    ipv.ylim( paramRanges[1][1]-.1, paramRanges[1][2]+.1 )
+    ipv.zlim( paramRanges[2][1]-.1, paramRanges[2][2]+.1 )
+    
     ipv.show()    
     
 
