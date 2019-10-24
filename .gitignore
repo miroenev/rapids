@@ -4,3 +4,4 @@
 */dask-worker-space/*
 *.csv
 *.zip
+*/.ipynb_chekpoints/*
