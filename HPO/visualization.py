@@ -23,7 +23,11 @@ rapidsColors = { 0: rapidsPrimary1,
                  8: np.hstack( [ np.random.random(3), np.array(1) ] ),
                  9: np.hstack( [ np.random.random(3), np.array(1) ] ) }
 
-def reduce_to_3D ( data, labels, datasetName, dimReductionMethod = 'PCA', maxSamplesForDimReduction = None ):
+def reduce_to_3D ( data, labels, datasetName, 
+                   predictedLabels = None, 
+                   dimReductionMethod = 'PCA', 
+                   maxSamplesForDimReduction = None ):
+    
     startTime = time.time()        
     
     # decimate to limit dim-reduction out of memory errors
@@ -32,7 +36,7 @@ def reduce_to_3D ( data, labels, datasetName, dimReductionMethod = 'PCA', maxSam
     else:        
         decimationFactor = np.max((1, data.shape[0] // maxSamplesForDimReduction))
     
-    if datasetName == 'synthetic':   
+    if datasetName == 'synthetic': # TODO: assumes non-shuffled data, test with shuffled
         decimationFactor *= 2
         coilData_1 = data.iloc[0::decimationFactor]
         coilData_2 = data.iloc[1::decimationFactor]
@@ -43,6 +47,8 @@ def reduce_to_3D ( data, labels, datasetName, dimReductionMethod = 'PCA', maxSam
     else:
         decimatedData = data[::decimationFactor]
         decimatedLabels = labels[::decimationFactor]
+    
+    
     
     print(f' > dim. reduction using {dimReductionMethod}', end = ' -- ')
     if decimationFactor > 1:
@@ -62,12 +68,21 @@ def reduce_to_3D ( data, labels, datasetName, dimReductionMethod = 'PCA', maxSam
         
     elif dimReductionMethod == 'UMAP':        
         embeddedData = cuml.UMAP( n_components = 3 ).fit_transform( X = decimatedData, y = decimatedLabels )
-                
+                          
+    # decimate predicted labels to match embedded data + labels
+    if predictedLabels is not None:
+        decimatedPredictions = predictedLabels[::decimationFactor] 
+    else:
+        decimatedPredictions = None
+
     elapsedTime = time.time() - startTime
     print(f'new shape: {embeddedData.shape} -- completed in: {elapsedTime:.3f} seconds')
-    return embeddedData, decimatedLabels
 
-def plot_data( data, labels, datasetName, dimReductionMethod = 'PCA', 
+    return embeddedData, decimatedLabels, decimatedPredictions
+
+
+def plot_data( data, labels, datasetName, predictedLabels = None,
+               dimReductionMethod = 'PCA', 
                maxSamplesForDimReduction = 1000000, 
                maxSamplesToPlot = 100000 ):
     '''
@@ -76,10 +91,13 @@ def plot_data( data, labels, datasetName, dimReductionMethod = 'PCA',
     
     print(f'plotting {datasetName.upper()} dataset, original shape: {data.shape}')
     if data.shape[1] != 3:
-        embeddedData, decimatedLabels = reduce_to_3D ( data, labels, datasetName, dimReductionMethod, maxSamplesForDimReduction )
+        embeddedData, decimatedLabels, decimatedPredictions = reduce_to_3D ( data, labels, datasetName,
+                                                                            predictedLabels, dimReductionMethod,
+                                                                            maxSamplesForDimReduction )
     else:
         embeddedData = data
         decimatedLabels = labels
+        decimatedPredictions = predictedLabels
     
     # decimation for visualizaiton
     maxSamplesToPlot = np.min( ( maxSamplesToPlot, embeddedData.shape[0] ))
@@ -91,16 +109,21 @@ def plot_data( data, labels, datasetName, dimReductionMethod = 'PCA',
         # read a maxSamplesToPlot number of samples (shuffled) and convert to numpy [CPU] for plotting
         targetSamples = np.random.permutation(embeddedData.shape[0])[0:maxSamplesToPlot]
         xyzViz = embeddedData.iloc[targetSamples, :].as_matrix()  # note implicit copy in the cudf->numpy conversion
-        labelsCopy = decimatedLabels.iloc[targetSamples].copy()
+        labelsViz = decimatedLabels.iloc[targetSamples].copy()
+        if decimatedPredictions is not None:
+            predictionsViz = decimatedPredictions.iloc[targetSamples]
+        else:
+            predictionsViz = None
     else:
         xyzViz = embeddedData.as_matrix()
-        labelsCopy = decimatedLabels.copy()
+        labelsViz = decimatedLabels
+        predictionsViz = decimatedPredictions
     
     # apply colors   
-    nClasses = labelsCopy[labelsCopy.columns[0]].nunique()
+    nClasses = labelsViz[labelsViz.columns[0]].nunique()
     
     for iClass in range ( nClasses ):
-        boolMask = labelsCopy == iClass
+        boolMask = labelsViz == iClass
         boolMask = boolMask.as_matrix()
         
         if iClass == 0:
@@ -110,5 +133,11 @@ def plot_data( data, labels, datasetName, dimReductionMethod = 'PCA',
     
     ipv.figure()
     ipv.scatter( xyzViz[:,0], xyzViz[:,1], xyzViz[:,2], color = color, marker = 'sphere', size = .5)
+    if predictionsViz is not None:
+        npLabels = np.squeeze(labelsViz.as_matrix().astype(int))
+        mispredictedSamples = np.where ( npLabels != predictionsViz )[0]        
+        ipv.scatter( xyzViz[mispredictedSamples,0], 
+                     xyzViz[mispredictedSamples,1], 
+                     xyzViz[mispredictedSamples,2], color = [1, 1, 1, .9], marker = 'diamond', size = .5)
     ipv.pylab.squarelim()
     ipv.show()
