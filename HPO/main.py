@@ -79,7 +79,7 @@ def parse_args():
     parser.add_argument('--dataset', default='synthetic', metavar='', type=str,
                         help="dataset to use: 'synthetic', 'higgs', 'airline'")
     parser.add_argument('--num_rows', default='10000', metavar='', type=int,
-                        help='number of rows when using real dataset')
+                        help='number of rows when using dataset')
     parser.add_argument('--coil_type', default='helix', metavar='', type=str,
                         help='the type of coil to generate the data')
     parser.add_argument('--num_blobs', default=1000, metavar='', type=int,
@@ -102,7 +102,7 @@ def parse_args():
                         help='the number of times to evaluate all particles')
     parser.add_argument('--num_particles', default=32, metavar='', type=int,
                         help='the number of particles in the swarm')
-    parser.add_argument('--async', default=False, dest='async', action='store_true',
+    parser.add_argument('--async', default=False, dest='async_flag', action='store_true',
                         help='use asynch')
     parser.add_argument('--random_search', default=False, dest='random_search', action='store_true',
                         help='use random search: particles update randomly')
@@ -134,15 +134,7 @@ def main(args):
     
     if args.dataset == 'synthetic':
         # generate data on the GPU
-        data, labels, t_gen = data_utils.gen_blob_coils( coilType=args.coil_type, shuffleFlag = False, 
-                                                         nBlobPoints = args.num_blobs,  
-                                                         nCoordinates = args.num_coordinates, 
-                                                         sdevScales = [args.sdev_scale,
-                                                                       args.sdev_scale,
-                                                                       args.sdev_scale], 
-                                                         noiseScale = args.noise_scale,
-                                                         coilDensity = args.coil_density,
-                                                         plotFlag = False)
+        data, labels, t_gen = data_utils.generate_dataset( coilType = 'helix', nSamples = args.num_rows)
 
         # split
         trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, t_split = \
@@ -169,7 +161,7 @@ def main(args):
     # launch HPO on Dask
     nEpochs = args.num_epochs
     nParticles = args.num_particles
-    allowAsync = args.async
+    allowAsync = args.async_flag
     randomSearch = args.random_search
     
     # TODO: add ranges to argparser
@@ -177,7 +169,7 @@ def main(args):
                     1: ['learning_rate', .001, 1, 'float'],
                     2: ['gamma', 0, 2, 'float'] }
     
-    mode = {'allowAsyncUpdates': args.async, 'randomSearch': args.random_search }
+    mode = {'allowAsyncUpdates': args.async_flag, 'randomSearch': args.random_search }
     
     particleHistory, globalBest, elapsedTime = swarm.run_hpo(client,
                                                mode,
