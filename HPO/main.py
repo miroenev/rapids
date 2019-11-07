@@ -2,6 +2,7 @@ import data_utils # load datasets (or generate data) on the gpu
 import swarm # particle swarm implementation
 
 import cudf
+import cuml
 
 import dask
 from dask import delayed
@@ -77,7 +78,7 @@ def parse_args():
     
     # Data generation arguments
     parser.add_argument('--dataset', default='synthetic', metavar='', type=str,
-                        help="dataset to use: 'synthetic', 'higgs', 'airline'")
+                        help="dataset to use: 'synthetic', 'higgs', 'airline', 'fashion-mnist")
     parser.add_argument('--num_rows', default='10000', metavar='', type=int,
                         help='number of rows when using dataset')
     parser.add_argument('--coil_type', default='helix', metavar='', type=str,
@@ -94,8 +95,10 @@ def parse_args():
                         help='how tight the coils are')
     
     # ETL arguments
-    parser.add_argument('--train_test_overlap', default=.05, metavar='', 
-                        help='percentage of train and test distribution that overlaps')
+    parser.add_argument('--train_test_overlap', default=.025, metavar='', 
+                        help='percentage of train and test distribution that overlaps for synthetic data')
+    parser.add_argument('--train_size', default=.7, metavar='', type=float,
+                        help='percentage of data used for training with real datasets')
     
     # HPO arguments
     parser.add_argument('--num_epochs', default=10, metavar='', type=int,
@@ -135,29 +138,22 @@ def main(args):
     if args.dataset == 'synthetic':
         # generate data on the GPU
         data, labels, t_gen = data_utils.generate_dataset( coilType = 'helix', nSamples = args.num_rows)
-
-        # split
-        trainData_cDF, trainLabels_cDF, testData_cDF, testLabels_cDF, t_split = \
-            data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap)
-
-        # apply standard scaling
-        trainMeans, trainSTDevs, t_scaleTrain = data_utils.scale_dataframe_inplace ( trainData_cDF )
-        _, _, t_scaleTest = data_utils.scale_dataframe_inplace ( testData_cDF, trainMeans, trainSTDevs )
-        
-    
-    # load data into GPU
     elif args.dataset =="higgs":
-        df = data_utils.prepare_higgs("data/", args.num_rows)
+        data, labels, _ = data_utils.load_higgs_dataset("data/higgs", args.num_rows)
     elif args.dataset == "airline":
-        df = data_utils.prepare_airline("data/", args.num_rows)
+        data, labels, _ = data_utils.load_airline_dataset("data/airline", args.num_rows)
+    elif args.dataset == "fashion-mnist":
+        data, labels, _ = data_utils.load_fashion_mnist_dataset("data/fmnist", args.num_rows)
 
-    # convert to cuda dataframe
-    if args.dataset == "higgs" or args.dataset == "airline":
-        trainData_cDF = cudf.DataFrame.from_pandas(df.X_train)
-        testData_cDF = cudf.DataFrame.from_pandas(df.X_test)
-        trainLabels_cDF = cudf.DataFrame.from_pandas(df.y_train.to_frame())
-        testLabels_cDF = cudf.DataFrame.from_pandas(df.y_test.to_frame())
-    
+    if args.dataset == 'synthetic':
+        trainData, trainLabels, testData, testLabels, _ = data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap )
+    else:
+        trainData, testData, trainLabels, testLabels = cuml.train_test_split( data, labels, shuffle = False, train_size=args.train_size )
+
+    # apply standard scaling
+    trainMeans, trainSTDevs, t_scaleTrain = data_utils.scale_dataframe_inplace ( trainData )
+    _, _, t_scaleTest = data_utils.scale_dataframe_inplace ( testData, trainMeans, trainSTDevs )
+
     # launch HPO on Dask
     nEpochs = args.num_epochs
     nParticles = args.num_particles
@@ -174,10 +170,10 @@ def main(args):
     particleHistory, globalBest, elapsedTime = swarm.run_hpo(client,
                                                mode,
                                                paramRanges,
-                                               trainData_cDF,
-                                               trainLabels_cDF,
-                                               testData_cDF,
-                                               testLabels_cDF,
+                                               trainData,
+                                               trainLabels,
+                                               testData,
+                                               testLabels,
                                                nParticles,
                                                nEpochs,
                                                wMomentum = .05, 

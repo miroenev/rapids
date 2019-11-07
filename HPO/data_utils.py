@@ -48,7 +48,7 @@ rapidsColors = { 0: rapidsPrimary1,
 ------------------------------------------------------------------------- '''
 def data_progress_hook ( blockNumber, readSize, totalFileSize ):
     if ( blockNumber % 1000 ) == 0:        
-        print(f' > percent complete: { ( blockNumber * readSize ) / totalFileSize:.2f}\r', end='')
+        print(f' > percent complete: { 100 * ( blockNumber * readSize ) / totalFileSize:.2f}\r', end='')
     return
 
 def download_dataset ( url, localDestination ):
@@ -57,8 +57,9 @@ def download_dataset ( url, localDestination ):
         print(f' > downloading dataset from: {url}')
         urlretrieve( url = url, filename = localDestination, reporthook = data_progress_hook )
 
-def load_higgs_dataset (dataPath, nSamplesToLoad):
-    
+def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
+    if not os.path.isdir(dataPath):
+        os.mkdir(dataPath)
     startTime = time.time()
     
     url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz'
@@ -81,8 +82,10 @@ def load_higgs_dataset (dataPath, nSamplesToLoad):
     timeToLoad = time.time() - startTime
     return data, labels, timeToLoad
 
-def load_airline_dataset (dataPath, nSamplesToLoad):
-    
+def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
+    if not os.path.isdir(dataPath):
+        os.mkdir(dataPath)
+
     startTime = time.time()
     
     url = 'http://kt.ijs.si/elena_ikonomovska/datasets/airline/airline_14col.data.bz2'
@@ -110,11 +113,12 @@ def load_airline_dataset (dataPath, nSamplesToLoad):
     timeToLoad = time.time() - startTime
     return data, labels, timeToLoad
 
-def load_fashion_mnist ( ):
+def load_fashion_mnist_dataset ( dataPath='./data/fmnist', nSamplesToLoad = 10000):
     startTime = time.time()
     trainDataURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-images-idx3-ubyte.gz'
     trainLabelsURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-labels-idx1-ubyte.gz'
-    dataPath = './data/fmnist'
+    if not os.path.isdir(dataPath):
+        os.mkdir(dataPath)
     localDestinationTrainData = os.path.join( dataPath, os.path.basename(trainDataURL))
     localDestinationTrainLabels = os.path.join( dataPath, os.path.basename(trainLabelsURL))
 
@@ -122,10 +126,10 @@ def load_fashion_mnist ( ):
     download_dataset ( trainLabelsURL, localDestinationTrainLabels )
 
     with gzip.open(localDestinationTrainLabels, 'rb') as lbpath:
-        labelsNP = np.frombuffer(lbpath.read(), dtype=np.uint8, offset=8)
+        labelsNP = np.frombuffer(lbpath.read(), dtype=np.uint8, offset=8, count=nSamplesToLoad)
 
     with gzip.open(localDestinationTrainData, 'rb') as imgpath:
-        dataNP = np.frombuffer(imgpath.read(), dtype=np.uint8, offset=16).reshape(len(labelsNP), 784)
+        dataNP = np.frombuffer(imgpath.read(), dtype=np.uint8, offset=16, count=nSamplesToLoad * 784).reshape(len(labelsNP), 784)
 
     data = cudf.DataFrame.from_pandas( pd.DataFrame( dataNP.astype(np.float32) ) )
 
