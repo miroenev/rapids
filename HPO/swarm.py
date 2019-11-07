@@ -234,7 +234,6 @@ def evaluate_particle ( particle, dataFutures, earlyStoppingRounds, retainPredic
     # fixed parameters
     paramsGPU = { 'objective': 'binary:hinge',
                   'tree_method': 'gpu_hist',
-                  'n_gpus': 1,
                   'random_state': 0 }
 
     # TODO: loop over paramRanges instead of hard code
@@ -280,7 +279,7 @@ def update_particle( particle, paramRanges, globalBestParams, personalBestParams
     
     # baseline to compare swarm update versus random search
     if randomSearchMode:        
-        sampledParams, sampledVelocities = swarm.sample_params( paramRanges )
+        sampledParams, sampledVelocities = sample_params( paramRanges )
         return sampledParams, sampledVelocities
         
     # computing update terms for particle swarm
@@ -293,7 +292,7 @@ def update_particle( particle, paramRanges, globalBestParams, personalBestParams
                              + wSocial      *  socialInfluence      * np.random.random()
     
     newParticleParams = particle['params'].copy() + newParticleVelocities
-    newParticleParams = swarm.enforce_param_bounds_inline ( newParticleParams, paramRanges )
+    newParticleParams = enforce_param_bounds_inline ( newParticleParams, paramRanges )
             
     return newParticleParams, newParticleVelocities
 
@@ -321,7 +320,7 @@ def run_hpo ( client, mode, paramRanges, trainData_cDF, trainLabels_cDF, testDat
     # initialize HPO strategy 
     # ----------------------------        
     def initialize_particle_futures ( nParticles, paramRanges, randomSeed, plotFlag ) :
-        initialParticleParams, initialParticleVelocities, globalBest, particleColors = swarm.initialize_particle_swarm ( nParticles, paramRanges, randomSeed, plotFlag )
+        initialParticleParams, initialParticleVelocities, globalBest, particleColors = initialize_particle_swarm ( nParticles, paramRanges, randomSeed, plotFlag )
         # create particle futures using the initialization positions and velocities    
         delayedEvalParticles = []
         for iParticle in range(nParticles):
@@ -337,10 +336,10 @@ def run_hpo ( client, mode, paramRanges, trainData_cDF, trainLabels_cDF, testDat
         particle, elapsedTime = particleFuture.result()
 
         # update hpo strategy meta-parameters -- i.e. swarm global best and particle personal best
-        particleHistory, globalBest = swarm.update_bests ( particleHistory, particle, globalBest, nEvaluations, mode['randomSearch'] )
+        particleHistory, globalBest = update_bests ( particleHistory, particle, globalBest, nEvaluations, mode['randomSearch'] )
 
         # update history with this particle's latest contribution/eval
-        particleHistory = swarm.update_history_dictionary ( particleHistory, particle, nEvaluations )
+        particleHistory = update_history_dictionary ( particleHistory, particle, nEvaluations )
 
         # update particle
         if randomSearchMode:
@@ -411,7 +410,7 @@ def run_hpo ( client, mode, paramRanges, trainData_cDF, trainLabels_cDF, testDat
     elapsedTime = time.time() - startTime
     
     print(f"\n\n best accuracy: {globalBest['accuracy']}, by particle: {globalBest['particleID']} on eval: {globalBest['iEvaluation']} ")
-    print(f" best parameters: {swarm.format_params( globalBest['params'], globalBest['nTrees'] )}, \n elpased time: {elapsedTime:.2f} seconds")
+    print(f" best parameters: {format_params( globalBest['params'], globalBest['nTrees'] )}, \n elpased time: {elapsedTime:.2f} seconds")
     
     particleHistory['initialParams'] = initialParticleParams
     particleHistory['paramRanges'] = paramRanges
