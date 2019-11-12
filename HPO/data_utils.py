@@ -59,7 +59,7 @@ def download_dataset ( url, localDestination ):
 
 def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
     if not os.path.isdir(dataPath):
-        os.mkdir(dataPath)
+        os.mkdirs(dataPath)
     startTime = time.time()
     
     url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz'
@@ -84,7 +84,7 @@ def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
 
 def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
     if not os.path.isdir(dataPath):
-        os.mkdir(dataPath)
+        os.mkdirs(dataPath, )
 
     startTime = time.time()
     
@@ -118,7 +118,7 @@ def load_fashion_mnist_dataset ( dataPath='./data/fmnist', nSamplesToLoad = 1000
     trainDataURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-images-idx3-ubyte.gz'
     trainLabelsURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-labels-idx1-ubyte.gz'
     if not os.path.isdir(dataPath):
-        os.mkdir(dataPath)
+        os.mkdirs(dataPath)
     localDestinationTrainData = os.path.join( dataPath, os.path.basename(trainDataURL))
     localDestinationTrainLabels = os.path.join( dataPath, os.path.basename(trainLabelsURL))
 
