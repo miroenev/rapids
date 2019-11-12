@@ -61,13 +61,6 @@ def launch_dask(n_gpus):
     return client, cluster
 
 def experiment_harness ( args ):
-    print( args )
-    
-    syncMode = ['sync', 'async' ]
-    nGPUs = [ 1, 4, 8, 16 ]
-    nDataSamples = [ 100000, 1000000, 10000000 ]
-    nParticles = 32
-    nEpochs = 10
 
     experimentLog = {}
     experimentCount = 0 
@@ -85,12 +78,22 @@ def experiment_harness ( args ):
         with open( logFilename, mode='w+') as outputCSV:
             outputCSV.write("elapsedTime, nSamples, asyncMode, nGPUs, nParticles, nEpochs, globalBestAccuracy, globalBest_max_depth, globalBest_learning_rate, globalBest_gamma, globalBest_nTrees, datasetName\n")
     
-    for iDataSamples in list ( args.num_rows ):
-        ''' ! synthetic data support only '''
-        datasetName = 'synthetic'
-        # generate data on the GPU
-        data, labels, t_gen = data_utils.generate_dataset( coilType = 'helix', nSamples = iDataSamples)
-        trainData, trainLabels, testData, testLabels, _ = data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap )
+    for iDataSamples in args.num_rows:
+        # generate or load data directly to the GPU
+        if args.dataset == 'synthetic':
+            data, labels, t_gen = data_utils.generate_dataset( coilType = 'helix', nSamples = iDataSamples)
+        elif args.dataset =="higgs":
+            data, labels, t_gen = data_utils.load_higgs_dataset("data/higgs", iDataSamples)
+        elif args.dataset == "airline":
+            data, labels, t_gen = data_utils.load_airline_dataset("data/airline", iDataSamples)
+        elif args.dataset == "fashion-mnist":
+            data, labels, t_gen = data_utils.load_fashion_mnist_dataset("data/fmnist", iDataSamples)
+
+        # split data into train and test
+        if args.dataset == 'synthetic':
+            trainData, trainLabels, testData, testLabels, _ = data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap )
+        else:
+            trainData, testData, trainLabels, testLabels = cuml.train_test_split( data, labels, shuffle = False, train_size=args.train_size )
 
         # apply standard scaling
         trainMeans, trainSTDevs, t_scaleTrain = data_utils.scale_dataframe_inplace ( trainData )
@@ -102,7 +105,6 @@ def experiment_harness ( args ):
             for iParticles in args.num_particles:
                 for iEpochs in args.num_epochs:
                     
-                    
                     mode = {'allowAsyncUpdates': args.async_flag, 'randomSearch': False }
                             
                     client, cluster = launch_dask(iGPUs)
@@ -111,10 +113,10 @@ def experiment_harness ( args ):
                                                                                    trainData, trainLabels, testData, testLabels,
                                                                                    iParticles, iEpochs )
                                         
-                    stringToOutput = f"{elapsedTime}, {iDataSamples}, {args.async_flag}, {iGPUs}, {iParticles}, {iEpochs},"
-                    stringToOutput += f"{globalBest['accuracy']}, {globalBest['params'][0]}, {globalBest['params'][1]}, {globalBest['params'][2]}, {globalBest['nTrees']}, {datasetName}\n"
+                    stringToOutput = f"{elapsedTime},{iDataSamples},{args.async_flag},{iGPUs},{iParticles},{iEpochs},"
+                    stringToOutput += f"{globalBest['accuracy']},{globalBest['params'][0]},{globalBest['params'][1]},{globalBest['params'][2]},"
+                    stringToOutput += f"{globalBest['nTrees']},{args.dataset}\n"
                     print( stringToOutput )
-                    
                     
                     with open(logFilename, mode='a') as outputCSV:                        
                         outputCSV.write(stringToOutput)
