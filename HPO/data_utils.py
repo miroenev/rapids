@@ -84,7 +84,7 @@ def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
 
 def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
     if not os.path.isdir(dataPath):
-        os.major(dataPath)
+        os.makedirs(dataPath)
 
     startTime = time.time()
     
