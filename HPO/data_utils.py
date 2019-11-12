@@ -59,7 +59,7 @@ def download_dataset ( url, localDestination ):
 
 def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
     if not os.path.isdir(dataPath):
-        os.mkdirs(dataPath)
+        os.makedirs(dataPath)
     startTime = time.time()
     
     url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz'
@@ -84,7 +84,7 @@ def load_higgs_dataset (dataPath='./data/higgs', nSamplesToLoad=10000):
 
 def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
     if not os.path.isdir(dataPath):
-        os.mkdirs(dataPath, )
+        os.major(dataPath)
 
     startTime = time.time()
     
