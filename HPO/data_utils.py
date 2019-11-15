@@ -105,7 +105,7 @@ def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
         df[col] = df[col].astype('category').cat.codes.astype( np.float32 )
 
     # Turn into binary classification problem
-    df["ArrDelayBinary"] = 1. * (df["ArrDelay"] > 0)
+    df["ArrDelayBinary"] = 1. * (df["ArrDelay"] > 5)
 
     data = cudf.DataFrame.from_pandas( df[df.columns.difference(["ArrDelay", "ArrDelayBinary"])] )
     labels = cudf.DataFrame.from_pandas( df["ArrDelayBinary"].to_frame() )
