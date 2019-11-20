@@ -11,6 +11,7 @@ import gzip
 
 import cupy
 import cudf
+import cuml
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -42,6 +43,43 @@ rapidsColors = { 0: rapidsPrimary1,
                  3: rapidsPrimary3,
                  4: rapidsSecondary4,
                  5: rapidsSecondary5 }
+
+
+
+class Dataset():    
+    def __init__(self, datasetName = 'synthetic', nSamples = None):
+        self.datasetName = datasetName
+        
+        if self.datasetName == 'synthetic':
+            
+            if nSamples == None: nSamples = 1000000
+            data, labels, elapsedTime  = generate_dataset( coilType = 'helix', nSamples = nSamples)
+            self.trainObjective = ['binary:hinge', None]
+
+        elif self.datasetName == 'fashion-mnist':
+
+            data, labels, elapsedTime = load_fashion_mnist () 
+            self.trainObjective = ['multi:softmax', 10]
+
+        elif self.datasetName == 'airline':
+            
+            if nSamples == None: nSamples = 5000000
+            data, labels, elapsedTime = load_airline_dataset ( 'data/', np.min( ( nSamples, 115000000 )))
+            self.trainObjective = ['binary:hinge', None]
+        
+        # split train and test data
+        self.trainData, self.trainLabels, self.testData, self.testLabels = self.split_train_test ( data, labels )
+        
+        # apply standard scaling
+        trainMeans, trainSTDevs, _ = scale_dataframe_inplace ( self.trainData )
+        _,_,_ = scale_dataframe_inplace ( self.testData, trainMeans, trainSTDevs )
+        
+    def split_train_test(self, data, labels, trainSize = .75, trainTestOverlap = .025 ):
+        if self.datasetName == 'synthetic':            
+            trainData, trainLabels, testData, testLabels, _ = split_train_test_nfolds ( data, labels, trainTestOverlap = trainTestOverlap )
+        else:
+            trainData, testData, trainLabels, testLabels = cuml.train_test_split( data, labels, shuffle = False, train_size= trainSize )        
+        return trainData, trainLabels, testData, testLabels
 
 ''' -------------------------------------------------------------------------
 >  DATA LOADING
