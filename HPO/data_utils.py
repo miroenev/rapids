@@ -47,24 +47,26 @@ rapidsColors = { 0: rapidsPrimary1,
 
 
 class Dataset():    
-    def __init__(self, datasetName = 'synthetic', nSamples = None):
+    def __init__(self, datasetName = 'synthetic', nSamples = None, dataPath = None):
         self.datasetName = datasetName
+        self.nSamples = nSamples
+        self.dataPath = dataPath
         
         if self.datasetName == 'synthetic':
-            
-            if nSamples == None: nSamples = 1000000
-            data, labels, elapsedTime  = generate_dataset( coilType = 'helix', nSamples = nSamples)
+            if self.nSamples is None: self.nSamples = 1000000
+            data, labels, elapsedTime  = generate_dataset( coilType = 'helix', nSamples = self.nSamples)
             self.trainObjective = ['binary:hinge', None]
 
         elif self.datasetName == 'fashion-mnist':
-
-            data, labels, elapsedTime = load_fashion_mnist () 
+            if self.nSamples is None: self.nSamples = 60000
+            if self.dataPath is None: self.dataPath = './data/fashion-mnist'
+            data, labels, elapsedTime = load_fashion_mnist_dataset(self.dataPath, np.min((self.nSamples, 60000))) 
             self.trainObjective = ['multi:softmax', 10]
 
         elif self.datasetName == 'airline':
-            
-            if nSamples == None: nSamples = 5000000
-            data, labels, elapsedTime = load_airline_dataset ( 'data/', np.min( ( nSamples, 115000000 )))
+            if self.nSamples is None: self.nSamples = 5000000
+            if self.dataPath is None: self.dataPath = './data/airline'
+            data, labels, elapsedTime = load_airline_dataset ( self.dataPath, np.min( ( self.nSamples, 115000000 )))
             self.trainObjective = ['binary:hinge', None]
         
         # split train and test data
@@ -156,7 +158,7 @@ def load_fashion_mnist_dataset ( dataPath='./data/fmnist', nSamplesToLoad = 1000
     trainDataURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-images-idx3-ubyte.gz'
     trainLabelsURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-labels-idx1-ubyte.gz'
     if not os.path.isdir(dataPath):
-        os.mkdirs(dataPath)
+        os.makedirs(dataPath)
     localDestinationTrainData = os.path.join( dataPath, os.path.basename(trainDataURL))
     localDestinationTrainLabels = os.path.join( dataPath, os.path.basename(trainLabelsURL))
 
