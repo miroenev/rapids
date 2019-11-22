@@ -136,6 +136,7 @@ def run_hpo(args):
     client, cluster = launch_dask(args.num_gpus, args.min_gpus,
                                   args.k8s, args.adapt, args.spec)
     
+    # generate or load data directly to the GPU
     if args.dataset == 'synthetic':
         dataset = Dataset('synthetic', args.num_rows)
     if args.dataset == 'airline':
@@ -150,9 +151,11 @@ def run_hpo(args):
                     2: ['gamma', 0, 2, 'float'] }
 
     if args.async_flag:
-        s = swarm.AsyncSwarm(client, dataset, paramRanges=paramRanges, nEpochs=args.num_epochs)
+        s = swarm.AsyncSwarm(client, dataset, paramRanges=paramRanges,
+                             nParticles=args.num_particles, nEpochs=args.num_epochs)
     else:
-        s = swarm.SyncSwarm(client, dataset, paramRanges=paramRanges, nEpochs=args.num_epochs)
+        s = swarm.SyncSwarm(client, dataset, paramRanges=paramRanges,
+                            nParticles=args.num_particles, nEpochs=args.num_epochs)
     
     s.run_search()
     
