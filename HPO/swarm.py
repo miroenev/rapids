@@ -1,19 +1,11 @@
-import numpy as np; import numpy.matlib
+import numpy as np
 import pandas as pd
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import ipyvolume as ipv
 
 import time
 import copy
 
 import cupy
 import cudf
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from sklearn import datasets; from sklearn.metrics import confusion_matrix, accuracy_score
 
 import dask
 from dask import delayed
@@ -25,8 +17,8 @@ import xgboost
 >  HPO / PARTICLE SWARM
 ----------------------------------------------------------------------'''
 def sample_params (paramRanges, randomSeed = None):
-    #if randomSeed:
-    #    np.random.seed(randomSeed)
+    if randomSeed is not None:
+        np.random.seed(randomSeed)
     
     paramSamples = []
     velocitySamples = []
@@ -37,12 +29,13 @@ def sample_params (paramRanges, randomSeed = None):
         paramType = paramRange[3]
 
         if paramType == 'int':
-            paramSamples += [ np.random.randint(low = lowerBound, high = upperBound) ]
+            paramSamples += [ np.random.randint( low = lowerBound, high = upperBound) ]
             
         elif paramType =='float':            
-            paramSamples += [ np.random.uniform(low = lowerBound, high = upperBound) ]
+            paramSamples += [ np.random.uniform( low = lowerBound, high = upperBound) ]
                 
-        velocitySamples += [ np.random.uniform( low = -np.abs( upperBound - lowerBound ), high = np.abs( upperBound - lowerBound ) ) ]
+        velocitySamples += [ np.random.uniform( low = -np.abs( upperBound - lowerBound ), 
+                                                high = np.abs( upperBound - lowerBound ) ) ]
         
     return np.array(paramSamples), np.array( velocitySamples)
 
@@ -54,11 +47,16 @@ class Particle():
         self.personalBestParams = pos
         self.personalBestPerf = 0
         self.posHistory = []
-        self.evalTimeHistory = []
+        self.nTreesHistory = []
+        self.veloHistory = []
+        self.evalTimeHistory = []        
+        self.trainDataPerfHistory = []
+        self.testDataPerfHistory = []
         self.nEvals = 0
+        self.color = np.random.random(3)
         
 class Swarm():
-    def __init__ ( self, client, dataset, paramRanges, nParticles = 10, nEpochs = 10 ):
+    def __init__ ( self, client, dataset, paramRanges, nParticles = 32, nEpochs = 10 ):
         
         self.client = client
         self.dataset = dataset
@@ -66,27 +64,39 @@ class Swarm():
         
         self.nParticles = nParticles
         self.nEpochs = nEpochs
+        swarmName = str(type(self)).split('.')[1].strip("'>'")
+        print( f'! initializing {swarmName}, with {self.nParticles} particles, and {self.nEpochs} epochs')
         self.reset_swarm()
         
     def reset_swarm( self ):
-        self.nEvals = 0
+        self.swarmEvals = 0
         
         self.particles = {}
         self.delayedEvalParticles = []
 
-        self.globalBest = {'accuracy': 0, 'particleID': -1, 'params': [], 'iEvaluation': - 1}
+        self.globalBest = {'accuracy': 0, 'particleID': -1, 'params': [], 'nTrees': -1, 'iEvaluation': - 1}
     
     def scatter_data_to_workers( self ):
         self.scatteredDataFutures = None
         if self.client is not None:
             self.scatteredDataFutures = self.client.scatter( [ self.dataset.trainData, self.dataset.trainLabels,
-                                                               self.dataset.testData,  self.dataset.testLabels ], broadcast = True )
+                                                               self.dataset.testData,  self.dataset.testLabels ],
+                                                             broadcast = True )
     
     def build_initial_particles( self ):
         self.delayedEvalParticles = []
+        self.particleColorStack = []
         for iParticle in range( self.nParticles ):
-            pos, velo = sample_params ( self.paramRanges )
+            pos, velo = sample_params ( self.paramRanges, randomSeed = iParticle )
+            
+            # fix first and last particle to capture upper and lower bounds
+            if iParticle == 0: pos[0] = self.paramRanges[0][1]; pos[1] = self.paramRanges[1][1]; pos[2] = self.paramRanges[2][1]
+            if iParticle == self.nParticles-1: pos[0] = self.paramRanges[0][2]; pos[1] = self.paramRanges[1][2]; pos[2] = self.paramRanges[2][2]
+                
             self.particles[iParticle] = Particle( pos, velo, particleID = iParticle )
+            if iParticle == 0: self.particleColorStack = self.particles[iParticle].color
+            else: self.particleColorStack = np.vstack( ( self.particleColorStack, self.particles[iParticle].color ) )
+            print(f'{iParticle},{pos},{velo}')
             self.delayedEvalParticles.append ( delayed ( evaluate_particle ) ( self.scatteredDataFutures,
                                                                                self.particles[iParticle].pos,
                                                                                self.paramRanges,
@@ -95,81 +105,147 @@ class Swarm():
 
     def enforce_bounds( self, newParameters ):
         for iParameter in range( len ( newParameters )):
-            newParameters[iParameter] = np.clip ( newParameters[iParameter], self.paramRanges[iParameter][1], self.paramRanges[iParameter][2])
+            newParameters[iParameter] = np.clip ( newParameters[iParameter], 
+                                                 self.paramRanges[iParameter][1], 
+                                                 self.paramRanges[iParameter][2])
         return newParameters
     
-    def update_particle (self, pID, latestTestDataPerf, evalTime, 
-                         wMomentum = .1, wGlobalBest = .55, wPersonalBest = .35, 
-                         mode = 'classification'):
-        
+    def update_global_best ( self, latestTestDataPerf, pID, nTrees ):
         if latestTestDataPerf > self.globalBest['accuracy']:
             self.globalBest['accuracy'] = latestTestDataPerf
             self.globalBest['params'] = self.particles[pID].pos.copy()
+            self.globalBest['nTrees'] = nTrees
             self.globalBest['particleID'] = pID
-            print(f'new global best {latestTestDataPerf:0.5f} found by particle {pID}, at eval {self.nEvals}')
+            self.globalBest['iEvaluation'] = self.particles[pID].nEvals
+            print(f'new best {latestTestDataPerf:0.5f} found by particle {pID} on eval {self.swarmEvals}')
         
+    
+    def update_particle (self, latestTestDataPerf, pID, nTrees, evalTime, 
+                         wMomentum = .1, wGlobalBest = .45, wPersonalBest = .35, wExplore = .1,
+                         randomSeed = None):        
+        if randomSeed is not None:
+            np.random.seed(randomSeed)
+        
+        # update swarm/global best
+        self.update_global_best ( latestTestDataPerf, pID, nTrees )
+        
+        # update particle's personal best
         if latestTestDataPerf > self.particles[pID].personalBestPerf:
             self.particles[pID].personalBestPerf = latestTestDataPerf
             self.particles[pID].personalBestParams = self.particles[pID].pos.copy()
-            print(f'\t\t new personal best {latestTestDataPerf:0.5f} found by particle {pID}, at eval {self.nEvals}')
         
-        # computing update terms for particle swarm
-        inertiaInfluence = self.particles[pID].velo.copy()
+        # computing velocity update terms [ attraction to global and personal best ]        
         socialInfluence = ( self.globalBest['params'] - self.particles[pID].pos )
         individualInfluence = ( self.particles[pID].personalBestParams - self.particles[pID].pos )
-
-        self.particles[pID].velo  =    wMomentum      *  inertiaInfluence     \
-                                     + wPersonalBest  *  individualInfluence  * np.random.random()   \
-                                     + wGlobalBest    *  socialInfluence      * np.random.random()
-
+        inertiaInfluence = self.particles[pID].velo.copy()
+        
+        # optional random exploration term
+        if wExplore > 0:  
+            _, exploreVelo = sample_params (self.paramRanges)
+        else: 
+            exploreVelo = np.array( [0., 0., 0.] )        
+        
+        # compute new velocity 
+        self.particles[pID].velo  =    wMomentum      *  inertiaInfluence \
+                                     + wPersonalBest  *  individualInfluence  * np.random.random() \
+                                     + wGlobalBest    *  socialInfluence      * np.random.random() \
+                                     + wExplore * exploreVelo
+        
+        # apply velocity to determine new particle position
         self.particles[pID].pos = self.particles[pID].pos.copy() + self.particles[pID].velo
+        
+        # make sure the particle does not leave the search boundaries
         self.particles[pID].pos = self.enforce_bounds( self.particles[pID].pos )
         
+    def log_particle_history ( self, testDataPerf, trainDataPerf, pID, nTrees, evalTime ):
         self.particles[pID].posHistory.append( self.particles[pID].pos )
-        self.particles[pID].nEvals += 1
+        self.particles[pID].nTreesHistory.append( nTrees )
+        self.particles[pID].veloHistory.append( self.particles[pID].velo )        
         self.particles[pID].evalTimeHistory.append( evalTime )
+        self.particles[pID].trainDataPerfHistory.append( trainDataPerf )
+        self.particles[pID].testDataPerfHistory.append( testDataPerf )
+        self.particles[pID].nEvals += 1
+        
+    def report_final_params ( self ):
+        print('search completed...\n\n')
+        print(f"{'accuracy':>15} : {self.globalBest['accuracy']:0.5f}")
+        print(f"{'elapsed time':>15} : {self.elapsedTime:0.3f} seconds")
+
+        
+        print(f"\n{'parameter':>15} | opt. value")
+        print('----------------------------------')
+        print(f"{self.paramRanges[0][0]:>15} : {int(self.globalBest['params'][0])}")
+        print(f"{self.paramRanges[1][0]:>15} : {self.globalBest['params'][1]:0.3f}")
+        print(f"{self.paramRanges[2][0]:>15} : {self.globalBest['params'][2]:0.3f}")
+        print(f"{'nTrees':>15} : {self.globalBest['nTrees']}")        
+
+        
         
 class SyncSwarm ( Swarm ):
-    def run_search( self ):
+    def run_search( self, asyncInitializeFlag = False ):
+        startTime = time.time()
+        
         self.reset_swarm ()
         self.scatter_data_to_workers ()
         self.build_initial_particles ()
         
-        for iEpoch in range( self.nEpochs ):
+        if asyncInitializeFlag: epochsToRun = 1
+        else: epochsToRun = self.nEpochs
+        
+        for iEpoch in range( epochsToRun ):
             futureEvalParticles = self.client.compute( self.delayedEvalParticles )
             self.delayedEvalParticles = []
             
             for iParticleFuture in futureEvalParticles:
-                testDataPerf, trainDataPerf, pID, evalTime = iParticleFuture.result()
-                self.update_particle ( pID, testDataPerf, evalTime ) # inplace update to particle.pos, particle.velo
                 
-                self.nEvals += 1
+                testDataPerf, trainDataPerf, pID, nTrees, evalTime = iParticleFuture.result()
+                
+                self.log_particle_history ( testDataPerf, trainDataPerf, pID, nTrees, evalTime )
+                self.update_particle ( testDataPerf, pID, nTrees, evalTime, 
+                                       randomSeed = pID + self.swarmEvals, wExplore = 0 )
+                
+                self.swarmEvals += 1
                 
                 self.delayedEvalParticles.append ( delayed ( evaluate_particle ) ( self.scatteredDataFutures,
                                                                                    self.particles[pID].pos,
                                                                                    self.paramRanges,
                                                                                    self.particles[pID].pID,
                                                                                    self.dataset.trainObjective ) )
-class AsyncSwarm ( Swarm ):
-    def run_search( self ):
-        self.reset_swarm ()
-        self.scatter_data_to_workers ()
-        self.build_initial_particles ()
-
+            print(f'> sync epoch {iEpoch} of {epochsToRun}')
+        self.elapsedTime = time.time() - startTime
+        if not asyncInitializeFlag: self.report_final_params()
+        
+# see dask documentation https://docs.dask.org/en/latest/futures.html#distributed.as_completed
+class AsyncSwarm ( SyncSwarm ):
+    def run_search( self, syncWarmupFlag = False ):
+        startTime = time.time()
+        
+        if syncWarmupFlag:
+            print('sync warmup')
+            super().run_search( asyncInitializeFlag = True)
+            print('sync warmup complete')
+        else:
+            self.reset_swarm ()
+            self.scatter_data_to_workers ()
+            self.build_initial_particles ()
+        
         futureEvalParticles = self.client.compute( self.delayedEvalParticles )
         particleFutureSeq = as_completed( futureEvalParticles )
         
-        # note that the particleFutureSeq is an iterator of futures
-        # at the end of the loop we create new work and append it to the iterartor, this behavior resembles a while loop
-        # see dask documentation https://docs.dask.org/en/latest/futures.html#distributed.as_completed
-        for particleFuture in particleFutureSeq: 
-            testDataPerf, trainDataPerf, pID, evalTime = particleFuture.result()
-            self.update_particle ( pID, testDataPerf, evalTime ) # inplace update to particle.pos, particle.velo
+        # particleFutureSeq is an iterator of futures, to which we append newly updated particles   
+        for particleFuture in particleFutureSeq:
+            testDataPerf, trainDataPerf, pID, nTrees, evalTime = particleFuture.result()
+            
+            self.log_particle_history( testDataPerf, trainDataPerf, pID, nTrees, evalTime )
+            self.update_particle ( testDataPerf, pID, nTrees, evalTime, wExplore =  0 )
 
-            self.nEvals += 1
-            approximateEpoch = self.nEvals // self.nParticles
+            self.swarmEvals += 1
+
+            # termination condition
+            approximateEpoch = self.swarmEvals // self.nParticles
             if approximateEpoch > self.nEpochs: break
             
+            # create delayed evaluations for newly updated particles 
             delayedParticle = delayed ( evaluate_particle ) ( self.scatteredDataFutures,
                                                               self.particles[pID].pos,
                                                               self.paramRanges,
@@ -179,8 +255,31 @@ class AsyncSwarm ( Swarm ):
             futureParticle = self.client.compute( delayedParticle )
             particleFutureSeq.add( futureParticle )
             
+            # print progress update via approximate epoch
+            if self.swarmEvals % self.nParticles == 0:
+                print(f'> async epoch {approximateEpoch} of {self.nEpochs}')
+
+        self.elapsedTime = time.time() - startTime
+        self.report_final_params()
+
+class RandomSearchSync ( SyncSwarm ):
+    def update_particle ( self, latestTestDataPerf, pID, nTrees, evalTime, wExplore = 1 ):
+        # update swarm/global best
+        self.update_global_best( latestTestDataPerf, pID, nTrees )        
+        # apply velocity to determine new particle position
+        self.particles[pID].pos, _ = sample_params (self.paramRanges)
+
+class RandomSearchAsync ( AsyncSwarm ):
+    def update_particle ( self, latestTestDataPerf, pID, nTrees, evalTime, wExplore = 1 ):
+        # update swarm/global best
+        self.update_global_best( latestTestDataPerf, pID, nTrees )        
+        # apply velocity to determine new particle position
+        self.particles[pID].pos, _ = sample_params (self.paramRanges)
+
+        
+        
 # xgboost parameters -- https://xgboost.readthedocs.io/en/latest/parameter.html
-def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, particleID, trainObjective, earlyStoppingRounds = 25 ) :
+def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, particleID, trainObjective, earlyStoppingRounds = 250 ) :
     trainDataFuture = scatteredDataFutures[0]
     trainLabelsFuture = scatteredDataFutures[1]
     testDataFuture = scatteredDataFutures[2]
@@ -202,9 +301,9 @@ def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, parti
             return float( parameterValue )
         
     # flexible parameters
-    xgboostParams['max_depth'] = enforce_type( particleParams[0], paramRanges[0] )
-    xgboostParams['learning_rate'] = enforce_type( particleParams[1], paramRanges[1] ) # shrinkage of feature weights after each boosting step
-    xgboostParams['gamma'] = enforce_type( particleParams[2], paramRanges[2] ) # complexity control, range [0, Inf ]
+    xgboostParams[paramRanges[0][0]] = enforce_type( particleParams[0], paramRanges[0] )
+    xgboostParams[paramRanges[1][0]] = enforce_type( particleParams[1], paramRanges[1] )
+    xgboostParams[paramRanges[2][0]] = enforce_type( particleParams[2], paramRanges[2] )
     xgboostParams['num_boost_rounds'] = 2000
     
     startTime = time.time()
@@ -219,7 +318,30 @@ def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, parti
 
     trainDataPerf = 1 - float( trainedModelGPU.eval(trainDMatrix).split(':')[1] )
     testDataPerf = 1 - float( trainedModelGPU.eval(testDMatrix).split(':')[1] )   
+    
+    nTrees = trainedModelGPU.best_iteration
 
     elapsedTime = time.time() - startTime
 
-    return testDataPerf, trainDataPerf, particleID, elapsedTime
+    return testDataPerf, trainDataPerf, particleID, nTrees, elapsedTime
+
+import pprint
+def evaluate_manual_params(dataset, manualXGBoostParams):
+    startTime = time.time()
+
+    manualXGBoostParams['objective'] = dataset.trainObjective[0]
+    if dataset.trainObjective[1] is not None: manualXGBoostParams['num_class'] = dataset.trainObjective[1]    
+    
+    trainDMatrix = xgboost.DMatrix( data = dataset.trainData, label = dataset.trainLabels )
+    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, params = manualXGBoostParams, num_boost_round = manualXGBoostParams['num_boost_round'] )
+
+    testDMatrix = xgboost.DMatrix( data = dataset.testData, label = dataset.testLabels )
+    predictionsGPU = trainedModelGPU.predict( testDMatrix ).astype(int)
+
+    trainAccuracy = 1 - float( trainedModelGPU.eval(trainDMatrix).split(':')[1] )
+    testAccuracy = 1 - float( trainedModelGPU.eval(testDMatrix).split(':')[1] )   
+
+    elapsedTime = time.time() - startTime
+    print(f'train accuracy : {trainAccuracy:0.3f} \ntest accuracy  : {testAccuracy:0.3f} \ntrained in {elapsedTime:0.2f} seconds\n')
+    print('parameter settings:\n')
+    pprint.pprint( manualXGBoostParams, indent=5 )
