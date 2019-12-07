@@ -10,8 +10,10 @@ import cudf
 import dask
 from dask import delayed
 from dask.distributed import as_completed
-
 import xgboost
+
+import matplotlib
+import visualization as viz
 
 ''' ---------------------------------------------------------------------
 >  HPO / PARTICLE SWARM
@@ -53,7 +55,7 @@ class Particle():
         self.trainDataPerfHistory = []
         self.testDataPerfHistory = []
         self.nEvals = 0
-        self.color = np.random.random(3)
+        self.color = matplotlib.colors.hex2color( viz.rapidsColorsHex[ particleID % viz.nRapidsColors ])
         
 class Swarm():
     def __init__ ( self, client, dataset, paramRanges, nParticles = 32, nEpochs = 10 ):
@@ -73,7 +75,7 @@ class Swarm():
         
         self.particles = {}
         self.delayedEvalParticles = []
-
+        self.nTreesHistory = []
         self.globalBest = {'accuracy': 0, 'particleID': -1, 'params': [], 'nTrees': -1, 'iEvaluation': - 1}
     
     def scatter_data_to_workers( self ):
@@ -86,6 +88,8 @@ class Swarm():
     def build_initial_particles( self ):
         self.delayedEvalParticles = []
         self.particleColorStack = []
+        
+        print(f'\n   pID |{self.paramRanges[0][0]:>15},{self.paramRanges[1][0]:>15},{self.paramRanges[2][0]:>15}')
         for iParticle in range( self.nParticles ):
             pos, velo = sample_params ( self.paramRanges, randomSeed = iParticle )
             
@@ -94,15 +98,17 @@ class Swarm():
             if iParticle == self.nParticles-1: pos[0] = self.paramRanges[0][2]; pos[1] = self.paramRanges[1][2]; pos[2] = self.paramRanges[2][2]
                 
             self.particles[iParticle] = Particle( pos, velo, particleID = iParticle )
-            if iParticle == 0: self.particleColorStack = self.particles[iParticle].color
+            
+            if iParticle == 0: self.particleColorStack = self.particles[iParticle].color                
             else: self.particleColorStack = np.vstack( ( self.particleColorStack, self.particles[iParticle].color ) )
-            print(f'{iParticle},{pos},{velo}')
+
+            # print initial particle locations            
+            print(f'   {iParticle:>3} |{pos[0]:>15.0f},{pos[1]:>15.2f},{pos[2]:>15.2f} ')
             self.delayedEvalParticles.append ( delayed ( evaluate_particle ) ( self.scatteredDataFutures,
                                                                                self.particles[iParticle].pos,
                                                                                self.paramRanges,
                                                                                self.particles[iParticle].pID,
-                                                                               self.dataset.trainObjective ) )
-
+                                                                               self.dataset.trainObjective ) )        
     def enforce_bounds( self, newParameters ):
         for iParameter in range( len ( newParameters )):
             newParameters[iParameter] = np.clip ( newParameters[iParameter], 
@@ -133,6 +139,9 @@ class Swarm():
         if latestTestDataPerf > self.particles[pID].personalBestPerf:
             self.particles[pID].personalBestPerf = latestTestDataPerf
             self.particles[pID].personalBestParams = self.particles[pID].pos.copy()
+            
+        # bookeeping for early stopping number of boosting rounds
+        self.nTreesHistory.append(nTrees)
         
         # computing velocity update terms [ attraction to global and personal best ]        
         socialInfluence = ( self.globalBest['params'] - self.particles[pID].pos )
@@ -220,10 +229,13 @@ class AsyncSwarm ( SyncSwarm ):
     def run_search( self, syncWarmupFlag = False ):
         startTime = time.time()
         
+        
+        
         if syncWarmupFlag:
             print('sync warmup')
             super().run_search( asyncInitializeFlag = True)
-            print('sync warmup complete')
+            print('sync warmup complete\n')
+            print('continuing with async search')
         else:
             self.reset_swarm ()
             self.scatter_data_to_workers ()

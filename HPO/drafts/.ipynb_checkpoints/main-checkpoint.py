@@ -1,4 +1,4 @@
-from data_utils import Dataset
+import data_utils # load datasets (or generate data) on the gpu
 import swarm # particle swarm implementation
 
 import cudf
@@ -130,33 +130,57 @@ def parse_args():
     return args
 
 
-def run_hpo(args):
+def main(args):
     
     client, cluster = launch_dask(args.num_gpus, args.min_gpus,
                                   args.k8s, args.adapt, args.spec)
     
-    # generate or load data directly to the GPU
     if args.dataset == 'synthetic':
-        dataset = Dataset('synthetic', args.num_rows)
-    if args.dataset == 'airline':
-        dataset = Dataset('airline', args.num_rows)
-    if args.dataset == 'fashion-mnist':
-        dataset = Dataset('fashion-mnist', args.num_rows)
+        # generate data on the GPU
+        data, labels, t_gen = data_utils.generate_dataset( coilType = 'helix', nSamples = args.num_rows)
+    elif args.dataset =="higgs":
+        data, labels, _ = data_utils.load_higgs_dataset("data/higgs", args.num_rows)
+    elif args.dataset == "airline":
+        data, labels, _ = data_utils.load_airline_dataset("data/airline", args.num_rows)
+    elif args.dataset == "fashion-mnist":
+        data, labels, _ = data_utils.load_fashion_mnist_dataset("data/fmnist", args.num_rows)
 
+    if args.dataset == 'synthetic':
+        trainData, trainLabels, testData, testLabels, _ = data_utils.split_train_test_nfolds ( data, labels, trainTestOverlap = args.train_test_overlap )
+    else:
+        trainData, testData, trainLabels, testLabels = cuml.train_test_split( data, labels, shuffle = False, train_size=args.train_size )
 
+    # apply standard scaling
+    trainMeans, trainSTDevs, t_scaleTrain = data_utils.scale_dataframe_inplace ( trainData )
+    _, _, t_scaleTest = data_utils.scale_dataframe_inplace ( testData, trainMeans, trainSTDevs )
+
+    # launch HPO on Dask
+    nEpochs = args.num_epochs
+    nParticles = args.num_particles
+    allowAsync = args.async_flag
+    randomSearch = args.random_search
+    
     # TODO: add ranges to argparser
     paramRanges = { 0: ['max_depth', 3, 20, 'int'],
                     1: ['learning_rate', .001, 1, 'float'],
                     2: ['gamma', 0, 2, 'float'] }
-
-    if args.async_flag:
-        s = swarm.AsyncSwarm(client, dataset, paramRanges=paramRanges,
-                             nParticles=args.num_particles, nEpochs=args.num_epochs)
-    else:
-        s = swarm.SyncSwarm(client, dataset, paramRanges=paramRanges,
-                            nParticles=args.num_particles, nEpochs=args.num_epochs)
     
-    s.run_search()
+    mode = {'allowAsyncUpdates': args.async_flag, 'randomSearch': args.random_search }
+    
+    particleHistory, globalBest, elapsedTime = swarm.run_hpo(client,
+                                               mode,
+                                               paramRanges,
+                                               trainData,
+                                               trainLabels,
+                                               testData,
+                                               testLabels,
+                                               nParticles,
+                                               nEpochs,
+                                               wMomentum = .05, 
+                                               wIndividual = .25,
+                                               wBest = .45, 
+                                               wExplore = 0,
+                                               plotFlag=False)
     
     # Shut down K8S workers
     close_dask(cluster, args.k8s)
@@ -164,4 +188,4 @@ def run_hpo(args):
     
 if __name__ == '__main__':
     args = parse_args()
-    run_hpo(args)
+    main(args)
