@@ -14,47 +14,31 @@ import warnings
 from urllib.request import urlretrieve
 
 class Dataset():    
-    def __init__( self, datasetName = 'synthetic', nSamples = None, 
-                  coilType = 'helix', coilDensity = 15, 
-                  coil1StDev = .3, coil2StDev = .3, 
-                  nGuidePointCenters = 1000, 
-                  randomSeed = 0, shuffleFlag = True ):
+    def __init__( self, datasetConfig = None ):
 
-        self.datasetName = datasetName
+        self.config = datasetConfig
         
-        if self.datasetName == 'synthetic':
-            self.coilType = coilType
-            if nSamples == None: nSamples = 1000000
-            self.data, self.labels, elapsedTime  = generate_synthetic_dataset( coilType = coilType, nSamples = nSamples,
-                                                                               coilDensity = coilDensity,
-                                                                               coil1StDev = coil1StDev, coil2StDev = coil2StDev,
-                                                                               nGuidePointCenters = nGuidePointCenters, 
-                                                                               shuffleFlag = shuffleFlag )
+        if 'synthetic' in self.config['datasetName']:
+            self.data, self.labels, elapsedTime  = generate_synthetic_dataset( self.config )
             self.trainObjective = ['binary:hinge', None]
             
-        elif self.datasetName == 'fashion-mnist':
-
-            self.data, self.labels, elapsedTime = load_fashion_mnist_dataset ( './data/fashion-mnist' ) 
+        elif 'fashion-mnist' in self.config['datasetName']:
+            self.config['nSamples'] = np.min( ( self.config['nSamples'], 60000 ))
+            self.data, self.labels, elapsedTime = load_fashion_mnist_dataset ( self.config ) 
             self.trainObjective = ['multi:softmax', 10]
 
-        elif self.datasetName == 'airline':
-            
-            if nSamples == None: nSamples = 5000000
-            self.data, self.labels, elapsedTime = load_airline_dataset ( './data/airline', np.min( ( nSamples, 115000000 )))
+        elif 'airline' in self.config['datasetName']:
+            self.config['nSamples'] = np.min( ( self.config['nSamples'], 115000000 ))
+            self.data, self.labels, elapsedTime = load_airline_dataset ( self.config )
             self.trainObjective = ['binary:hinge', None]
             
         self.trainData = self.trainLabels = self.testData = self.testLabels = None
         
-        self.samplesToSwap = int(self.data.shape[0] * .002)     # samples to exchange between train and test set [ enables generalization in the synthetic data case ]
-        self.percentTrain = .885                                # precent of the dataset to use for training 
-        self.nScalingRuns = 0                                   # book-keeping guard to track number of times dataset has been rescaled
+        self.nScalingRuns = 0 # book-keeping guard to track number of times dataset has been rescaled
         
     def assign_dataset_splits ( self, trainData, testData, trainLabels, testLabels ):
-        self.trainData = trainData
-        self.trainLabels = trainLabels
-        self.testData = testData
-        self.testLabels = testLabels
-        self.nScalingRuns = 0
+        self.trainData = trainData; self.trainLabels = trainLabels
+        self.testData = testData; self.testLabels = testLabels        
         
 ''' -------------------------------------------------------------------------
 >  public dataset loading 
@@ -70,7 +54,14 @@ def download_dataset ( url, localDestination, reportHook = None ):
         print(f' > downloading dataset from: {url}')
         urlretrieve( url = url, filename = localDestination, reporthook = reportHook )
 
-def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
+def load_airline_dataset ( config, delayedThreshold = 10. ):
+    
+    dataPath = config['localSaveDir'] + 'airline'
+    nSamplesToLoad = config['nSamples']
+    
+    if 'delayedThreshold' in config.keys():
+        delayedThreshold = config['delayedThreshold']
+    
     if not os.path.isdir(dataPath):
         os.makedirs(dataPath)
 
@@ -98,8 +89,8 @@ def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
         else:
             df[col] = df[col].astype( np.int32 )
         
-    # turn into binary classification problem [i.e. flights delayed beyond 5 minutes are considered late ]
-    df["ArrDelayBinary"] = 1. * (df["ArrDelay"] > 5)
+    # turn into binary classification [i.e. flight delays beyond delayedThreshold minutes are considered late ]
+    df["ArrDelayBinary"] = 1. * (df["ArrDelay"] > delayedThreshold )
 
     data = cudf.DataFrame.from_pandas( df[df.columns.difference(["ArrDelay", "ArrDelayBinary"])] )
     labels = cudf.DataFrame.from_pandas( df["ArrDelayBinary"].to_frame() )
@@ -107,12 +98,16 @@ def load_airline_dataset (dataPath='./data/airline', nSamplesToLoad=10000):
     timeToLoad = time.time() - startTime
     return data, labels, timeToLoad
 
-def load_fashion_mnist_dataset ( dataPath='./data/fmnist', nSamplesToLoad = 60000):
+def load_fashion_mnist_dataset ( config ) :
+    dataPath = config['localSaveDir'] + 'fmnist'
+    nSamplesToLoad = config['nSamples']
+    
     startTime = time.time()
     trainDataURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-images-idx3-ubyte.gz'
     trainLabelsURL = 'https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/train-labels-idx1-ubyte.gz'
+    
     if not os.path.isdir(dataPath):
-        os.mkdirs(dataPath)
+        os.makedirs(dataPath)
     localDestinationTrainData = os.path.join( dataPath, os.path.basename(trainDataURL))
     localDestinationTrainLabels = os.path.join( dataPath, os.path.basename(trainLabelsURL))
 
@@ -142,7 +137,7 @@ def gen_coil ( nPoints= 100, coilType='helix',  coilDensity = 10, coilDiameter =
     y = coilDiameter * np.cos( x ) * direction
     z = coilDiameter * np.sin( x ) * direction
 
-    if coilType == 'whirl':        
+    if coilType == 'swirl':        
         y /= float(coilDiameter)
         z /= float(coilDiameter)
         y *= x*x/( coilDensity * 8 )
@@ -156,25 +151,30 @@ def gen_two_coils ( nPoints, coilType, coilDensity ):
     coil2 = gen_coil( nPoints, coilType, coilDensity, direction = -1)
     return coil1, coil2
 
-def generate_synthetic_dataset ( coilType = 'helix', nSamples = 1000000, coilDensity = 12,
-                                 coil1StDev = .3, coil2StDev = .3,
-                                 nGuidePointCenters = 500,
-                                 randomSeed = 0, shuffleFlag = True ):
+def generate_synthetic_dataset ( config ):
+    
+    coilType = config['coilType'] 
+    nSamples = config['nSamples']
+    coilDensity = config['coilDensity']
+    coil1StDev = config['coil1StDev']
+    coil2StDev = config['coil2StDev']
+    nGuidePointsPerCoil = config['nGuidePointsPerCoil']
+    randomSeed = config['randomSeed']
+    shuffleFlag = config['shuffleFlag']
     
     startTime = time.time()
     
-    coil1Centers, coil2Centers = gen_two_coils( nPoints = nGuidePointCenters, 
+    coil1Centers, coil2Centers = gen_two_coils( nPoints = nGuidePointsPerCoil, 
                                                            coilType = coilType, 
-                                                           coilDensity = coilDensity )
-    
+                                                           coilDensity = coilDensity )    
     samplesPerCoil = nSamples // 2 
     nDims = 3
     
     coil1Data, _ = cuml.make_blobs ( n_samples = samplesPerCoil, n_features=nDims, centers=coil1Centers, 
-                                     cluster_std = coil1StDev, random_state = 0, dtype = 'float')
+                                     cluster_std = coil1StDev, random_state = randomSeed, dtype = 'float')
 
     coil2Data, _ = cuml.make_blobs ( n_samples = samplesPerCoil, n_features=nDims, centers=coil2Centers, 
-                                     cluster_std = coil2StDev, random_state = 0, dtype = 'float')
+                                     cluster_std = coil2StDev, random_state = randomSeed, dtype = 'float')
 
     combinedData = cupy.empty( shape = (samplesPerCoil * 2, nDims), dtype = 'float32', order='F')
     combinedData[0::2] = coil1Data
@@ -185,7 +185,7 @@ def generate_synthetic_dataset ( coilType = 'helix', nSamples = 1000000, coilDen
     combinedLabels[1::2] = cupy.zeros( shape = (samplesPerCoil, 1), dtype = 'int' )
     
     if shuffleFlag:
-        cupy.random.seed(0)
+        cupy.random.seed(randomSeed)
         shuffledInds = cupy.random.permutation (combinedData.shape[0])
         combinedData = cupy.asfortranarray(combinedData[shuffledInds, :])
         combinedLabels = cupy.asfortranarray(combinedLabels[shuffledInds])

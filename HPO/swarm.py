@@ -56,16 +56,35 @@ class Particle():
         self.testDataPerfHistory = []
         self.nEvals = 0
         self.color = matplotlib.colors.hex2color( viz.rapidsColorsHex[ particleID % viz.nRapidsColors ])
-        
+
+def parse_tunable_params ( modelConfig ):
+    paramRanges = {}
+    paramCount = 0
+    for key, value in modelConfig.items():
+        if 'tunableParam' in key:        
+            paramRanges.update( { paramCount : value } )
+            paramCount += 1    
+    return paramRanges 
+    
 class Swarm():
-    def __init__ ( self, client, dataset, paramRanges, nParticles = 32, nEpochs = 10 ):
+    def __init__ ( self, client, dataset, HPOConfig, modelConfig, computeConfig ):
         
         self.client = client
         self.dataset = dataset
-        self.paramRanges = paramRanges
         
-        self.nParticles = nParticles
-        self.nEpochs = nEpochs
+        
+        self.nParticles = HPOConfig['nParticles']
+        self.nEpochs = HPOConfig['nEpochs']
+        self.paramRanges = parse_tunable_params( modelConfig )
+
+        # CPU baseline options
+        if computeConfig['clusterType'] == 'LocalCluster':
+            self.cpuFlag = True
+            self.dataset.cpuDataset = dataset_to_CPU ( dataset )
+        else:
+            self.cpuFlag = False
+            self.dataset.cpuDataset = None
+        
         swarmName = str(type(self)).split('.')[1].strip("'>'")
         print( f'! initializing {swarmName}, with {self.nParticles} particles, and {self.nEpochs} epochs')
         self.reset_swarm()
@@ -81,9 +100,16 @@ class Swarm():
     def scatter_data_to_workers( self ):
         self.scatteredDataFutures = None
         if self.client is not None:
-            self.scatteredDataFutures = self.client.scatter( [ self.dataset.trainData, self.dataset.trainLabels,
-                                                               self.dataset.testData,  self.dataset.testLabels ],
-                                                             broadcast = True )
+            if not self.cpuFlag:
+                self.scatteredDataFutures = self.client.scatter( [ self.dataset.trainData, self.dataset.trainLabels,
+                                                                   self.dataset.testData,  self.dataset.testLabels ],
+                                                                   broadcast = True )                
+            else:
+                self.scatteredDataFutures = self.client.scatter( [ self.dataset.cpuDataset['trainData'], 
+                                                                   self.dataset.cpuDataset['trainLabels'],
+                                                                   self.dataset.cpuDataset['testData'], 
+                                                                   self.dataset.cpuDataset['testLabels'] ], 
+                                                                   broadcast = True )
     
     def build_initial_particles( self ):
         self.delayedEvalParticles = []
@@ -108,7 +134,10 @@ class Swarm():
                                                                                self.particles[iParticle].pos,
                                                                                self.paramRanges,
                                                                                self.particles[iParticle].pID,
-                                                                               self.dataset.trainObjective ) )        
+                                                                               self.dataset.trainObjective,
+                                                                               cpuFlag = self.cpuFlag ) )
+        print('')
+        
     def enforce_bounds( self, newParameters ):
         for iParameter in range( len ( newParameters )):
             newParameters[iParameter] = np.clip ( newParameters[iParameter], 
@@ -187,7 +216,6 @@ class Swarm():
         print(f"{self.paramRanges[1][0]:>15} : {self.globalBest['params'][1]:0.3f}")
         print(f"{self.paramRanges[2][0]:>15} : {self.globalBest['params'][2]:0.3f}")
         print(f"{'nTrees':>15} : {self.globalBest['nTrees']}")        
-
         
         
 class SyncSwarm ( Swarm ):
@@ -219,7 +247,8 @@ class SyncSwarm ( Swarm ):
                                                                                    self.particles[pID].pos,
                                                                                    self.paramRanges,
                                                                                    self.particles[pID].pID,
-                                                                                   self.dataset.trainObjective ) )
+                                                                                   self.dataset.trainObjective,
+                                                                                   cpuFlag = self.cpuFlag ) )
             print(f'> sync epoch {iEpoch} of {epochsToRun}')
         self.elapsedTime = time.time() - startTime
         if not asyncInitializeFlag: self.report_final_params()
@@ -228,8 +257,6 @@ class SyncSwarm ( Swarm ):
 class AsyncSwarm ( SyncSwarm ):
     def run_search( self, syncWarmupFlag = False ):
         startTime = time.time()
-        
-        
         
         if syncWarmupFlag:
             print('sync warmup')
@@ -262,7 +289,8 @@ class AsyncSwarm ( SyncSwarm ):
                                                               self.particles[pID].pos,
                                                               self.paramRanges,
                                                               self.particles[pID].pID,
-                                                              self.dataset.trainObjective )
+                                                              self.dataset.trainObjective,
+                                                              cpuFlag = self.cpuFlag )
             
             futureParticle = self.client.compute( delayedParticle )
             particleFutureSeq.add( futureParticle )
@@ -274,33 +302,37 @@ class AsyncSwarm ( SyncSwarm ):
         self.elapsedTime = time.time() - startTime
         self.report_final_params()
 
-class RandomSearchSync ( SyncSwarm ):
-    def update_particle ( self, latestTestDataPerf, pID, nTrees, evalTime, wExplore = 1 ):
-        # update swarm/global best
-        self.update_global_best( latestTestDataPerf, pID, nTrees )        
-        # apply velocity to determine new particle position
-        self.particles[pID].pos, _ = sample_params (self.paramRanges)
-
 class RandomSearchAsync ( AsyncSwarm ):
     def update_particle ( self, latestTestDataPerf, pID, nTrees, evalTime, wExplore = 1 ):
         # update swarm/global best
-        self.update_global_best( latestTestDataPerf, pID, nTrees )        
+        self.update_global_best( latestTestDataPerf, pID, nTrees )   
+
+        # bookeeping for early stopping number of boosting rounds
+        self.nTreesHistory.append(nTrees)
+        
         # apply velocity to determine new particle position
         self.particles[pID].pos, _ = sample_params (self.paramRanges)
-
-        
-        
+              
 # xgboost parameters -- https://xgboost.readthedocs.io/en/latest/parameter.html
-def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, particleID, trainObjective, earlyStoppingRounds = 250 ) :
+def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, particleID, 
+                        trainObjective, earlyStoppingRounds = 250, cpuFlag = False, nCPUWorkers = 1 ) :
+    
     trainDataFuture = scatteredDataFutures[0]
     trainLabelsFuture = scatteredDataFutures[1]
     testDataFuture = scatteredDataFutures[2]
     testLabelsFuture = scatteredDataFutures[3]
-        
-    xgboostParams = {
-        'tree_method': 'gpu_hist',
-        'random_state': 0, 
-    }
+    
+    if not cpuFlag:
+        xgboostParams = {
+            'tree_method'  : 'gpu_hist',
+            'random_state' : 0, 
+        }        
+    else:
+        xgboostParams = {
+            'tree_method'  : 'hist',
+            'n_jobs'       : nCPUWorkers,
+            'random_state' : 0, 
+        }
     
     # objective [ binary or multi-class ]
     xgboostParams['objective'] = trainObjective[0]
@@ -319,11 +351,12 @@ def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, parti
     xgboostParams['num_boost_rounds'] = 2000
     
     startTime = time.time()
-
+        
     trainDMatrix = xgboost.DMatrix( data = trainDataFuture, label = trainLabelsFuture )
     testDMatrix = xgboost.DMatrix( data = testDataFuture, label = testLabelsFuture )
-
-    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, evals = [(testDMatrix, 'test')], params = xgboostParams,
+        
+    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, evals = [(testDMatrix, 'test')], 
+                                     params = xgboostParams,
                                      num_boost_round = xgboostParams['num_boost_rounds'], 
                                      early_stopping_rounds = earlyStoppingRounds,
                                      verbose_eval = False )
@@ -337,23 +370,69 @@ def evaluate_particle ( scatteredDataFutures, particleParams, paramRanges, parti
 
     return testDataPerf, trainDataPerf, particleID, nTrees, elapsedTime
 
+def dataset_to_CPU ( dataset ):
+    cpuDataset = {}
+    cpuDataset['trainData'] = dataset.trainData.to_pandas().values
+    cpuDataset['testData'] = dataset.testData.to_pandas().values
+    cpuDataset['trainLabels'] = dataset.trainLabels.to_pandas().values
+    cpuDataset['testLabels'] = dataset.testLabels.to_pandas().values
+    return cpuDataset
+
 import pprint
-def evaluate_manual_params(dataset, manualXGBoostParams):
+def evaluate_manual_params (dataset, manualXGBoostParams):
     startTime = time.time()
 
     manualXGBoostParams['objective'] = dataset.trainObjective[0]
     if dataset.trainObjective[1] is not None: manualXGBoostParams['num_class'] = dataset.trainObjective[1]    
     
     trainDMatrix = xgboost.DMatrix( data = dataset.trainData, label = dataset.trainLabels )
-    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, params = manualXGBoostParams, num_boost_round = manualXGBoostParams['num_boost_round'] )
-
-    testDMatrix = xgboost.DMatrix( data = dataset.testData, label = dataset.testLabels )
-    predictionsGPU = trainedModelGPU.predict( testDMatrix ).astype(int)
+    trainedModelGPU = xgboost.train( dtrain = trainDMatrix, 
+                                     params = manualXGBoostParams, 
+                                     num_boost_round = manualXGBoostParams['num_boost_round'] )
+    
+    trainTime = time.time() - startTime
+    
+    startTime = time.time()
+    
+    testDMatrix = xgboost.DMatrix( data = dataset.testData, label = dataset.testLabels )    
 
     trainAccuracy = 1 - float( trainedModelGPU.eval(trainDMatrix).split(':')[1] )
     testAccuracy = 1 - float( trainedModelGPU.eval(testDMatrix).split(':')[1] )   
 
-    elapsedTime = time.time() - startTime
-    print(f'train accuracy : {trainAccuracy:0.3f} \ntest accuracy  : {testAccuracy:0.3f} \ntrained in {elapsedTime:0.2f} seconds\n')
-    print('parameter settings:\n')
-    pprint.pprint( manualXGBoostParams, indent=5 )
+    inferenceTime = time.time() - startTime
+    
+    print(f'train accuracy : {trainAccuracy:0.4f} in {trainTime:0.4f} seconds')
+    print(f'test  accuracy : {testAccuracy:0.4f} in {inferenceTime:0.4f} seconds')
+    return trainedModelGPU, trainTime, inferenceTime
+    
+def evaluate_manual_params_CPU ( dataset, manualXGBoostParamsCPU, nCPUWorkers = 1 ):
+    startTime = time.time()
+    
+    datasetCPU = dataset_to_CPU ( dataset )
+    manualXGBoostParamsCPU['tree_method'] = 'hist'
+    manualXGBoostParamsCPU['n_jobs'] = nCPUWorkers
+
+    # inherit objective
+    manualXGBoostParamsCPU['objective'] = dataset.trainObjective[0]
+    if dataset.trainObjective[1] is not None: manualXGBoostParamsCPU['num_class'] = dataset.trainObjective[1]                    
+    
+    trainDMatrixCPU = xgboost.DMatrix( data = datasetCPU['trainData'], 
+                                       label = datasetCPU['trainLabels'] )
+    
+    trainedModelCPU = xgboost.train( dtrain = trainDMatrixCPU, 
+                                     params = manualXGBoostParamsCPU, 
+                                     num_boost_round = manualXGBoostParamsCPU['num_boost_round'] )
+    
+    trainTime = time.time() - startTime
+    
+    startTime = time.time()
+    testDMatrixCPU = xgboost.DMatrix( data = datasetCPU['testData'], 
+                                      label = datasetCPU['testLabels'])
+    
+    trainAccuracy = 1 - float( trainedModelCPU.eval(trainDMatrixCPU).split(':')[1] )
+    testAccuracy = 1 - float( trainedModelCPU.eval(testDMatrixCPU).split(':')[1] )   
+
+    inferenceTime = time.time() - startTime
+    print(f'train accuracy : {trainAccuracy:0.4f} in {trainTime:0.4f} seconds')
+    print(f'test  accuracy : {testAccuracy:0.4f} in {inferenceTime:0.4f} seconds')
+    return trainedModelCPU, trainTime, inferenceTime

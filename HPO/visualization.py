@@ -4,11 +4,16 @@ from mpl_toolkits.mplot3d import Axes3D
 
 from ipywidgets import FloatSlider, ColorPicker, VBox, HBox, Label, jslink
 import ipywidgets as widgets
+from IPython.display import Image
 
 import pandas as pd
 import ipyvolume as ipv
 import numpy as np
 import cudf
+import cuml
+import cupy
+import xgboost
+
 import time
 import copy
 
@@ -40,164 +45,134 @@ def append_colormap( colorDict, cmap = matplotlib.cm.jet ):
 rapidsColorsHex = append_colormap( rapidsColorsHex )
 nRapidsColors = len ( rapidsColorsHex ) 
 
-
-''' -------------------------------------------------------------------------
->  dataset plotting and dimensionality reduction
->  train and test set visualization with interactive sliders/buttons
-------------------------------------------------------------------------- '''
-def reduce_to_3D ( data, labels, predictedLabels = None, 
-                   dimReductionMethod = 'UMAP', 
-                   maxSamplesForDimReduction = None ):
+def plot_data_train_vs_test ( dataset, vizConfig ):
     
-    startTime = time.time()        
+    startTime = time.time()
     
-    # decimate to limit dim-reduction out of memory errors
-    if maxSamplesForDimReduction is None:
-        decimationFactor = 1        
-    else:        
-        decimationFactor = np.max((1, data.shape[0] // maxSamplesForDimReduction))
+    maxSamplesToPlot = vizConfig['maxSamplesToPlot']
+    embeddingSampleLimit = vizConfig['embedding']['sampleLimit']
+    dimReductionMethod = vizConfig['embedding']['method']
     
-    decimatedData = data[::decimationFactor]
-    decimatedLabels = labels[::decimationFactor]
-        
-    print(f' > dim. reduction using {dimReductionMethod}', end = ' -- ')
-    if decimationFactor > 1:
-        print(f'decimating by {decimationFactor}x', end = ' -- ' )
-        
-    if dimReductionMethod == 'PCA':        
-        dimReductionModel = cuml.PCA( copy = True, n_components = 3,
-                                      random_state = 0, 
-                                      svd_solver = 'full', 
-                                      verbose = True, 
-                                      whiten = False )
-        embeddedData = dimReductionModel.fit_transform ( X = decimatedData )
-
-    elif dimReductionMethod == 'TSNE':        
-        embeddedData = cuml.TSNE( n_components = 2 ).fit_transform ( X = decimatedData )
-        embeddedData.add_column('z', cudf.Series(np.zeros((decimatedData.shape[0]))) )
-        
-    elif dimReductionMethod == 'UMAP':        
-        embeddedData = cuml.UMAP( n_components = 3 ).fit_transform( X = decimatedData, y = decimatedLabels )
-                          
-    # decimate predicted labels to match embedded data + labels
-    if predictedLabels is not None:
-        decimatedPredictions = predictedLabels[::decimationFactor] 
+    
+    if dataset.data.shape[1] > 3:
+        embeddingRequiredFlag = True
     else:
-        decimatedPredictions = None
+        embeddingRequiredFlag = False
+        
+    if embeddingRequiredFlag and maxSamplesToPlot > embeddingSampleLimit:
+        print(f'since embedding is necessary, further decimating to embedding sample limit : {embeddingSampleLimit} ')
+        maxSamplesToPlot = embeddingSampleLimit
+                        
+    ipvFig = comboBox = ipv.figure ( width = ipvPlotWidth, height = ipvPlotHeight, controls=False )
 
-    elapsedTime = time.time() - startTime
-    print(f'new shape: {embeddedData.shape} -- completed in: {elapsedTime:.3f} seconds')
-
-    return embeddedData, decimatedLabels, decimatedPredictions
-
-def plot_data( dataset, plotMode = 'full', maxSamplesToPlot = 100000, 
-               dimReductionMethod = 'UMAP', 
-               maxSamplesForDimReduction = None, predictedLabels = None ):
+    # determine split of maxSamplesToPlot per data-subset
+    trainDataFraction = dataset.trainData.shape[0]/( dataset.data.shape[0] * 1.)
+    testDataFraction = 1. - trainDataFraction
+    testDataSamplesToPlot = int( maxSamplesToPlot * testDataFraction )
+    trainDataSamplesToPlot = int( maxSamplesToPlot * trainDataFraction )
     
-    ipvFig = comboBox = ipv.figure ( width = ipvPlotWidth, height = ipvPlotHeight, controls=False )    
     
-    if plotMode == 'full':
-        scatterPlot, _ = plot_decimated_data_layer( dataset.data, dataset.labels, maxSamplesToPlot )
+    # decimate train 
+    print(f'shuffling and decimating - train-set ... ', end='')
+    targetSamples = cupy.random.permutation(dataset.trainData.shape[0])[0:trainDataSamplesToPlot]
+    decimatedTrainData = dataset.trainData.iloc[targetSamples, :].copy()
+    decimatedTrainLabels = dataset.trainLabels.iloc[targetSamples].copy()
+    
+    # decimate test
+    print('test-set ...')
+    targetSamples = cupy.random.permutation(dataset.testData.shape[0])[0:testDataSamplesToPlot]
+    decimatedTestData = dataset.testData.iloc[targetSamples, :].copy()
+    decimatedTestLabels = dataset.testLabels.iloc[targetSamples].copy()
+    
+    # embed train and test
+    if embeddingRequiredFlag: 
+        print('embedding train-set into new shape ', end='')
+        embeddedTrain, embeddingModel = reduce_to_3D ( decimatedTrainData, decimatedTrainLabels, dimReductionMethod )
         
-    elif plotMode == 'train':
-        scatterPlot, _ = plot_decimated_data_layer( dataset.trainData, dataset.trainLabels, maxSamplesToPlot )
-        
-    elif plotMode == 'test':
-        scatterPlot, _ = plot_decimated_data_layer( dataset.testData, dataset.testLabels, maxSamplesToPlot )
-        
-    elif plotMode == 'test-vs-train':
-        # determine split of maxSamplesToPlot per data-subset
-        trainDataFraction = dataset.testData.shape[0]/dataset.data.shape[0]
-        testDataFraction = 1. - trainDataFraction
-        testDataSamplesToPlot = int( maxSamplesToPlot * testDataFraction )
-        trainDataSamplesToPlot = int( maxSamplesToPlot * testDataFraction )
-        testDataScatterPlot, testColorStack = plot_decimated_data_layer( dataset.testData, dataset.testLabels, maxSamplesToPlot = trainDataSamplesToPlot )
-        trainDataScatterPlot, trainColorStack = plot_decimated_data_layer( dataset.trainData, dataset.trainLabels,  maxSamplesToPlot = trainDataSamplesToPlot )
-        
-        # sliders to impact marker size of train and test data
-        testSize = FloatSlider( min=0.1, max=5., step=0.1, readout_format='.1f')
-        jslink((testDataScatterPlot, 'size_selected'), (testSize, 'value'))
+        print('embedding test-set into new shape ', end='')
+        embeddedTest, _ = reduce_to_3D ( decimatedTestData, decimatedTestLabels, dimReductionMethod, trainedEmbeddingModel = embeddingModel )
+    else:
+        embeddedTrain = decimatedTrainData
+        embeddedTest = decimatedTestData
+    
+    # plot train [ possibly embed ]
+    testDataScatterPlot, testColorStack = plot_decimated_data_layer( embeddedTest, decimatedTestLabels )
+    # plot test [ use trained embedding model ]
+    trainDataScatterPlot, trainColorStack = plot_decimated_data_layer( embeddedTrain, decimatedTrainLabels)    
+    
+    plot_feature_distributions ( embeddedTrain, embeddedTest ) # saves file to local storage
+    
+    
+    # sliders to impact marker size of train and test data
+    testSize = FloatSlider( min=0.1, max=5., step=0.25, readout_format='.1f')
+    jslink((testDataScatterPlot, 'size_selected'), (testSize, 'value'))
 
-        trainSize = FloatSlider(min=0.1, max=5., step=0.1, readout_format='.1f')
-        jslink((trainDataScatterPlot, 'size_selected'), (trainSize, 'value'))
+    trainSize = FloatSlider(min=0.1, max=5., step=0.25, readout_format='.1f')
+    jslink((trainDataScatterPlot, 'size_selected'), (trainSize, 'value'))
         
-        # buttons to allow coloring test and train data white and reverting back
-        markTestButton = widgets.Button( description = "mark TEST"); 
-        unmarkTestButton = widgets.Button( description = "unmark TEST")
-        markTrainButton = widgets.Button( description = "mark TRAIN"); 
-        unmarkTrainButton = widgets.Button( description = "unmark TRAIN")
+    # buttons to allow coloring test and train data and reverting back
+    markTestButton = widgets.Button( description = "mark TEST"); 
+    unmarkTestButton = widgets.Button( description = "unmark TEST")
+    markTrainButton = widgets.Button( description = "mark TRAIN"); 
+    unmarkTrainButton = widgets.Button( description = "unmark TRAIN")
 
-        def apply_test_color(_):
-            testDataScatterPlot.set_trait('color_selected', 'white' )
-        def revert_test_color(_):
-            testDataScatterPlot.set_trait('color_selected', testColorStack )
-        def apply_train_color(_):
-            trainDataScatterPlot.set_trait('color_selected', 'white' )
-        def revert_train_color(_):
-            trainDataScatterPlot.set_trait('color_selected', trainColorStack )
+    def apply_test_color(_):
+        testDataScatterPlot.set_trait('color_selected', 'white' )
+    def revert_test_color(_):
+        testDataScatterPlot.set_trait('color_selected', testColorStack )
+    def apply_train_color(_):
+        trainDataScatterPlot.set_trait('color_selected', 'white' )
+    def revert_train_color(_):
+        trainDataScatterPlot.set_trait('color_selected', trainColorStack )
+    
+    markTestButton.on_click( apply_test_color )
+    unmarkTestButton.on_click( revert_test_color )
+    markTrainButton.on_click( apply_train_color )
+    unmarkTrainButton.on_click( revert_train_color )
         
-        markTestButton.on_click( apply_test_color )
-        unmarkTestButton.on_click( revert_test_color )
-        markTrainButton.on_click( apply_train_color )
-        unmarkTrainButton.on_click( revert_train_color )
-                
-        htmlString = f"<font size=5>Dataset : <font color='{rapidsColorsHex[0]}'>{dataset.datasetName.capitalize()}</font></font>"
-        comboBox = VBox( [ ipvFig, widgets.HTML(value=htmlString), 
-                          HBox( [ Label('TEST  marker size:'), testSize]), 
-                          HBox( [ Label('TRAIN marker size:'), trainSize]), 
-                          HBox( [ markTestButton, unmarkTestButton ] ), 
-                          HBox( [ markTrainButton, unmarkTrainButton ] ) ]) 
-        
+    htmlString = f"<font size=5>Dataset : " \
+                 f"<font color='{rapidsColorsHex[0]}'>{dataset.config['datasetName'].capitalize()}" \
+                 "</font></font>"
+    
+    tabWidget = widgets.Tab()
+    
+    fDistroImage = HBox( [ widgets.Image( value = open('feature_distributions.png', 'rb').read(), 
+                                            format = 'png' ) ] )
+    fDistroImage.layout.justify_content='center'
+    
+    comboBox = VBox( [ ipvFig, widgets.HTML(value=htmlString), 
+                                HBox( [ Label('TEST  marker size:'), testSize]), 
+                                HBox( [ Label('TRAIN marker size:'), trainSize]), 
+                                HBox( [ markTestButton, unmarkTestButton ] ), 
+                                HBox( [ markTrainButton, unmarkTrainButton ] ) ] )        
+    
     comboBox.layout.align_items = 'center'
-    display(comboBox)
+    tabWidget.set_title(0, f'Interactive')
+    tabWidget.set_title(1, f'Distributions')
+    tabWidget.children = [ comboBox, fDistroImage ]
+    
+    print(f'elapsed time : {time.time()- startTime}')
+    display(tabWidget)
+    
+    
+def plot_decimated_data_layer ( data, labels, noPlotFlag = False):
 
-def plot_decimated_data_layer ( data, labels, maxSamplesToPlot = 100000, predictedLabels = None, noPlotFlag = False):
-        
-    # dimensionality reduction [ and optional decimation ]
-    if data.shape[1] != 3:
-        maxSamplesForDimReduction = maxSamplesToPlot
-        embeddedData, decimatedLabels, decimatedPredictions = reduce_to_3D ( data, labels, datasetName,
-                                                                            predictedLabels, dimReductionMethod,
-                                                                            maxSamplesForDimReduction )
-    else:
-        embeddedData = data
-        decimatedLabels = labels
-        decimatedPredictions = predictedLabels
-        
-    maxSamplesToPlot = np.min( ( maxSamplesToPlot, embeddedData.shape[0] ))
-    
-    # decimate large datasets to a reasonable number of points [randomly sampled] for plotting
-    if embeddedData.shape[0] > maxSamplesToPlot:        
-        # read a maxSamplesToPlot number of samples (shuffled) and convert to numpy [CPU] for plotting
-        targetSamples = np.random.permutation(embeddedData.shape[0])[0:maxSamplesToPlot]
-        xyzViz = embeddedData.iloc[targetSamples, :].as_matrix()  # copy decimated 3D data into numpy format [ required for plotting ]
-        labelsViz = decimatedLabels.iloc[targetSamples].copy()    # create a new [small] cudf dataframe of the copied decimated labels
-        if decimatedPredictions is not None:
-            predictionsViz = decimatedPredictions.iloc[targetSamples]
-        else:
-            predictionsViz = None
-    else:
-        # undecimated data ( presumably its small )
-        xyzViz = embeddedData.as_matrix() # convert 3D data to numpy arrays required for plotting
-        labelsViz = decimatedLabels
-        predictionsViz = decimatedPredictions
-    
     # apply colors via boolean class mapping -- equality search using cudf dataframe of decimated labels    
-    nClasses = labelsViz[labelsViz.columns[0]].nunique()
+    nClasses = labels[labels.columns[0]].nunique()
+    
+    nSamples = data.shape[0]
     for iClass in range ( nClasses ):
-        boolMask = labelsViz == iClass
+        boolMask = labels == iClass
         boolMask = boolMask.as_matrix()
 
         classColor = np.concatenate( ( np.array(matplotlib.colors.hex2color( rapidsColorsHex[iClass%nRapidsColors] )), np.array([1.,])))
 
         if iClass == 0:            
-            colorStack = boolMask * np.ones ( (xyzViz.shape[0], 4) )  * classColor
+            colorStack = boolMask * np.ones ( (nSamples, 4) )  * classColor
         else:
-            colorStack += boolMask * np.ones ( (xyzViz.shape[0], 4) )  * classColor
+            colorStack += boolMask * np.ones ( (nSamples, 4) )  * classColor
     
-    if noPlotFlag:
-        return xyzViz, colorStack
-    
+    xyzViz = data.as_matrix()
     scatterPlot = ipv.scatter ( xyzViz[:,0], xyzViz[:,1], xyzViz[:,2], 
                                     color = colorStack, marker = 'sphere', size = .5, 
                                     selected = np.arange(xyzViz.shape[0]),
@@ -212,6 +187,73 @@ def plot_decimated_data_layer ( data, labels, maxSamplesToPlot = 100000, predict
                      xyzViz[mispredictedSamples,2], color = [1, 1, 1, .9], marker = 'diamond', size = .5)
     '''
     return scatterPlot, colorStack
+    
+''' -------------------------------------------------------------------------
+>  dataset plotting and dimensionality reduction
+>  train and test set visualization with interactive sliders/buttons
+------------------------------------------------------------------------- '''
+def reduce_to_3D ( data, labels, dimReductionMethod, trainedEmbeddingModel = None ):
+    
+    startTime = time.time()        
+    
+    preTrainedStr = ''
+
+    '''
+    if dimReductionMethod == 'TSNE':        
+        embeddingModel = None
+        embeddedData = cuml.TSNE( n_components = 2 ).fit_transform ( X = data )
+        embeddedData.add_column('3', cudf.Series(np.zeros((data.shape[0]))) )
+    else:
+    '''
+    if trainedEmbeddingModel is not None:
+        preTrainedStr = 'pre-trained '
+        embeddingModel = trainedEmbeddingModel
+    else:
+        if dimReductionMethod == 'PCA':        
+            embeddingModel = cuml.PCA( copy = True, n_components = 3,
+                                       random_state = 0,
+                                       svd_solver = 'full',
+                                       verbose = True, 
+                                       whiten = False ).fit( X = data )
+
+        elif dimReductionMethod == 'UMAP':
+            embeddingModel = cuml.UMAP( n_components = 3 ).fit( X = data, y = labels )                
+        else:
+            assert('unable to find embedding model match to user query')
+        
+    embeddedData = embeddingModel.transform ( X = data )            
+   
+    elapsedTime = time.time() - startTime
+    print(f'{embeddedData.shape} via {preTrainedStr}{dimReductionMethod} -- completed in: {elapsedTime:.3f} seconds')
+
+    return embeddedData, embeddingModel
+
+def plot_feature_distributions ( embeddedTrain, embeddedTest, maxSamplesToPlot = 1000, nBins = 30 ):
+    fig = plt.figure(figsize=(10,10))
+    plt.subplots_adjust(left=0.1, right=.9, bottom=0.1, top=.9,  wspace=.1, hspace=.5)
+    
+    startTime = time.time()
+    
+    featureColumns = embeddedTrain.columns
+    
+    nColumns = len( featureColumns ) 
+    for iColumn in range( nColumns ) :
+        iColumnName = featureColumns[iColumn]
+        ax = plt.subplot( nColumns, 1, iColumn + 1 )
+
+        upperBound = max( embeddedTrain[iColumnName].max(), embeddedTest[iColumnName].max() ) 
+        lowerBound = max( embeddedTrain[iColumnName].min(), embeddedTest[iColumnName].min() )     
+        trainDataNP = np.hstack( [lowerBound,  embeddedTrain[iColumnName].to_array(), upperBound])
+        testDataNP = np.hstack( [lowerBound,  embeddedTest[iColumnName].to_array(), upperBound])    
+        ax.hist(trainDataNP, bins = nBins, color = '#666666', alpha = 1)
+        ax.hist(testDataNP, bins = nBins, color = '#ffb500', alpha = 0.75)
+        ax.legend(['train', 'test'])
+        ax.set_title(str(iColumnName), fontsize=15)
+    
+    plt.savefig('feature_distributions.png')
+    plt.close(fig);
+    
+    print(f'computing feature distributions in {time.time() - startTime:0.2f} seconds')    
     
 ''' -------------------------------------------------------------------------
 >  post swarm viz
@@ -255,9 +297,8 @@ def plot_boosting_rounds_histogram ( swarm ):
     
     plt.title('\nHistogram of Boosting Rounds\n\n' + textStr, fontsize=15);
     plt.grid(True, zorder=0)
-
-def viz_particle_trails( swarm, topN = None, globalBestIndicatorFlag = True, tabbedPlot = False ):
     
+def viz_particle_trails ( swarm, topN = None, globalBestIndicatorFlag = True, tabbedPlot = False ):    
     startTime = time.time()
     targetMedianParticleSize = 3
     nTreesDescaler = np.median( swarm.nTreesHistory ) / targetMedianParticleSize 
@@ -275,30 +316,38 @@ def viz_particle_trails( swarm, topN = None, globalBestIndicatorFlag = True, tab
         else:
             particleMaxes[key] = 0
             
-    sortedParticles = pd.DataFrame.from_dict(particleMaxes, orient='index').sort_values(by=0,ascending=False)
-    topParticles = sortedParticles.index[0:np.min((np.max((topN,1)),swarm.nParticles))]  
+    sortedParticles = pd.DataFrame.from_dict(particleMaxes, orient='index').sort_values(by=0, ascending=False)
+    topParticles = sortedParticles.index[0:np.min((np.max((topN,1)),swarm.nParticles))]
         
     for iParticle in range( swarm.nParticles ):
 
         if len( swarm.particles[ iParticle ].posHistory ):
+            
             particlePosHistory = np.matrix( swarm.particles[ iParticle ].posHistory )
             
             # plot markers along the particle's journey over the epoch sequence
             if iParticle in topParticles:
+                
                 # draw top particles with their unique color and scaled by the number of trees
                 sortedIndex = np.where(topParticles==iParticle)[0][0]
                 particleColor = rapidsColorsHex[sortedIndex % nRapidsColors]
-                
+                particleSizes = {}
                 for iEval in range( swarm.particles[iParticle].nEvals ):
-                    particleSize = np.clip( swarm.particles[iParticle].nTreesHistory[iEval]/nTreesDescaler, minParticleSize, maxParticleSize)
-                    xyz = np.matrix( particlePosHistory[iEval,:] )
-                    ipv.scatter( xyz[:,0], xyz[:,1], xyz[:,2], size = particleSize,
-                                 marker = 'sphere', color = particleColor, grow_limits = False )
+                    particleSizes[iEval] = np.clip( swarm.particles[iParticle].nTreesHistory[iEval]/nTreesDescaler, minParticleSize, maxParticleSize)
+                
+                #import pdb; pdb.set_trace()                
+                ipv.scatter( particlePosHistory[:,0].squeeze(),
+                             particlePosHistory[:,1].squeeze(),
+                             particlePosHistory[:,2].squeeze(), 
+                             size = np.array(list(particleSizes.values())),
+                             marker = 'sphere', color = particleColor, grow_limits = False )
+
             else:
                 # draw non-top particle locations in gray
                 particleColor = ( .7, .7, .7, .9 )
-                xyz = np.matrix( particlePosHistory )
-                ipv.scatter( xyz[:,0].squeeze(), xyz[:,1].squeeze(), xyz[:,2].squeeze(), size = 1.5,
+                ipv.scatter( particlePosHistory[:,0].squeeze(),
+                             particlePosHistory[:,1].squeeze(),
+                             particlePosHistory[:,2].squeeze(), size = 1.5,
                              marker = 'sphere', color = particleColor, grow_limits = False )
                 
             # plot line trajectory [ applies to both top and non-top particles ]
@@ -313,7 +362,7 @@ def viz_particle_trails( swarm, topN = None, globalBestIndicatorFlag = True, tab
                      color = rapidsColorsHex[1], 
                      size = 3, marker='box') 
 
-        data = np.ones((100,4,4))
+        data = np.ones((100,2,2))
         xSpan = np.clip( (swarm.paramRanges[0][2] - swarm.paramRanges[0][1])/200, .007, 1 )
         ySpan = np.clip( (swarm.paramRanges[1][2] - swarm.paramRanges[1][1])/200, .007, 1 )
         zSpan = np.clip( (swarm.paramRanges[2][2] - swarm.paramRanges[2][1])/200, .007, 1 )
@@ -363,6 +412,7 @@ def viz_swarm( swarm, paramLabels = False ):
     
     for iFrame in range( nAnimationFrames ):
         for iParticle in range( nParticles ):
+            
             if iParticle in particleHistoryCopy.keys():
                 # particle exists in the particleHistory and it has parameters for the current frame
                 if len( particleHistoryCopy[iParticle] ):
@@ -385,7 +435,7 @@ def viz_swarm( swarm, paramLabels = False ):
                     #particleXYZ[iFrame, iParticle, : ] = initialParticleParams[iParticle].copy()
                     #lastKnownLocation[iParticle] = particleXYZ[iFrame, iParticle, : ].copy()                    
         
-    ipvFig = ipv.figure()
+    ipvFig = ipv.figure( width = ipvPlotWidth, height = ipvPlotHeight )
     
     scatterPlots = ipv.scatter( particleXYZ[:, :, 0], 
                                 particleXYZ[:, :, 1], 
@@ -400,14 +450,13 @@ def viz_swarm( swarm, paramLabels = False ):
     ipv.xlim( swarm.paramRanges[0][1]-.5, swarm.paramRanges[0][2]+.5 )
     ipv.ylim( swarm.paramRanges[1][1]-.1, swarm.paramRanges[1][2]+.1 )
     ipv.zlim( swarm.paramRanges[2][1]-.1, swarm.paramRanges[2][2]+.1 )
-    
-    ipv.show()
+        
     container = ipv.gcc()
     container.layout.align_items = 'center'
-    # comboBox = append_label_buttons( swarm, ipv.gcc())#HBox([ipvFig, animControl]) )
-    # display( comboBox )
+    comboBox = append_label_buttons( swarm, ipvFig, container )    
+    display( comboBox )
     
-def append_label_buttons( swarm, ipvFig ):
+def append_label_buttons( swarm, ipvFig, container=None ):
     
     xyzLabelsButton = widgets.Button(description="x, y, z labels")
     paramNamesLabelsButton = widgets.Button(description="parameter labels")
@@ -423,11 +472,39 @@ def append_label_buttons( swarm, ipvFig ):
     
     xyzLabelsButton.on_click(xyz_labels)
     paramNamesLabelsButton.on_click(param_labels)
-
-    comboBox = VBox([ipvFig, HBox([xyzLabelsButton,paramNamesLabelsButton])] )
+    
+    if container is None:
+        container = ipvFig
+    comboBox = VBox([container, HBox([xyzLabelsButton,paramNamesLabelsButton])] )
     comboBox.layout.align_items = 'center'
     return comboBox    
 
+''' -------------------------------------------------------------------------
+>  xgboost model visualization tools
+------------------------------------------------------------------------- '''
+
+def plot_first_N_trees ( trainedModel, nTrees = 5, figSize = None ):
+    df = trainedModel.trees_to_dataframe()
+    nodesPerTree = int( df['Tree'].value_counts().mean() )
+    
+    if figSize is None:
+        figSize = ( np.clip( nTrees * nodesPerTree * 3, 25, 2**16), nodesPerTree//2 )
+        print(figSize)
+        
+    plt.figure ( figsize = figSize, facecolor=(1, 1, 1) )
+    for iTree in range(nTrees):
+        ax = plt.subplot(1, nTrees, iTree + 1)
+        xgboost.plot_tree ( trainedModel, num_trees = iTree, ax = ax )
+
+def plot_feature_importance( trainedModel, maxFeatures = 10, color='#a788e4'):
+    plt.figure ( figsize = (10,7) )
+    ax = plt.subplot(1,1,1)
+    xgboost.plot_importance ( trainedModel, 
+                              max_num_features = maxFeatures, 
+                              color=color, ax = ax, zorder=3 );
+    plt.grid(True, zorder=0)
+    
+    
 ''' -------------------------------------------------------------------------
 >  visualize impact of various parameters on synthetic data
 ------------------------------------------------------------------------- '''
@@ -460,3 +537,4 @@ def gen_synthetic_dataset_variant (coilType = 'helix', coils=9, nSamples = 10000
                                                               coil1StDev = coil1StDev, coil2StDev = coil2StDev, shuffleFlag = True)
     xyz, colors = plot_decimated_data_layer( data, labels, noPlotFlag = True )
     return xyz, colors
+    
