@@ -1,4 +1,4 @@
-FROM rapidsai/rapidsai:0.10-cuda10.1-runtime-ubuntu18.04
+FROM rapidsai/rapidsai:0.11-cuda10.1-runtime-ubuntu18.04
 
 ENV CONDA_ENV rapids
 
