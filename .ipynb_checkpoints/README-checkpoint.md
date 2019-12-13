@@ -1,5 +1,5 @@
 
-<center><img src='images/rapids_motivation.png'></center>
+<center><img src='iamges/rapids_motivation.png'></center>
 
 # Rapids End to End ML Demo
 
@@ -29,7 +29,8 @@
 * 5.1 - Create an ensemble with a clustering model [ DBScan ]
 * 5.2 - Export data to DeepLearning Framework [ PyTorch ]
     
-<center><img src='images/dataset.png'></center>
+<center><img width='80%
+' src='https://raw.githubusercontent.com/miroenev/rapids/master/dataset.png'></center>
 
 
 # Install & Run Demo 
@@ -41,13 +42,13 @@
 
 
 ### 2 -- build container [ takes 5-10 minutes ]
-    cd docker
-    sudo docker build -t rapids-demo:latest .
+
+    sudo docker build -t rapids-demo:v0 .
 
 
 ### 3 -- launch/run the container [ auto starts jupyter notebook ]
 
-    sudo docker run --runtime=nvidia -it --rm -p 8888:8888 -p 8787:8787 rapids-demo:latest
+    sudo docker run --runtime=nvidia -it --rm -p 8888:8888 -p 8787:8787 rapids-demo:v0
 
 ### 4 -- connect to notebook
 
