@@ -41,7 +41,6 @@
 
 
 ### 2 -- build container [ takes 5-10 minutes ]
-    cd docker
     sudo docker build -t rapids-demo:latest .
 
 
