@@ -1,7 +1,5 @@
 <center><img width = 600px src='images/swarm.png'></center>
 
-<!-- <img width = 75% src='images/choices.png'> -->
-
 # Hyperparamter Optimzation using RAPIDS and DASK
 
 Notebook Table of Contents: 
@@ -46,17 +44,19 @@ e.g., http://127.0.0.1:8888
 
 > In the /rapids/HPO/ directory open the notebook hpo.ipynb
 
-## Using the CLI
+## Using the CLI [ TDOO: incomplete refactor ]
 
 1 -- get help on CLI options
 
-``` python main.py --help```
+``` python hpo.py --help```
 
 2 -- launch experiments
 
-```python main.py --num_gpus 4 --num_timesteps 10 --coil_type 'helix'```
+```python hpo.py --num_gpus 4 --num_timesteps 10 --coil_type 'helix'```
 
 ## Using Kubeflow and Dask-Kubernetes
+
+<center><img width = 600px src='images/scaling.png'></center>
 
 1 -- install Kubernetes, Ceph, and Kubeflow from [NVIDIA/deepops](https://github.com/NVIDIA/deepops/blob/master/docs/kubernetes-cluster.md)
 
