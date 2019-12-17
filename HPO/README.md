@@ -1,4 +1,4 @@
-<img width = 75% src='images/swarm.png'>
+<center><img width = 600px src='images/swarm.png'></center>
 
 <!-- <img width = 75% src='images/choices.png'> -->
 
