@@ -1,4 +1,4 @@
-<img width = 85% src='images/rapids_motivation.png'>
+<img width = 85% src='images/swarm.png'>
 
 <!-- <img width = 75% src='images/choices.png'> -->
 
