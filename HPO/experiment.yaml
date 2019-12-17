@@ -1,5 +1,5 @@
 HPO_strategy:
-  asyncWarmupFlag: true
+  asyncWarmupFlag: false
   nEpochs: 10
   nParticles: 16
   randomSeed: 0
