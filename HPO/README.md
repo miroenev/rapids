@@ -79,6 +79,6 @@ e.g., http://127.0.0.1:8888
 ```sh
 pods="";
 for i in `kubectl get pods -n kubeflow | grep dask-root- | awk '{print $1}'`; 
-```
+
 do pods="${pods} ${i}"; done; echo "deleting ${pods}";  kubectl delete pods -n kubeflow ${pods}
 ```
