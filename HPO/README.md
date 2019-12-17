@@ -44,7 +44,7 @@ Notebook Table of Contents:
 > navigate browser to the IP of the machine running the container
 e.g., http://127.0.0.1:8888
 
-> In the /rapids/HPO/ directory open the notebook XX-XX-2019_rapids_dask_hpo.ipynb
+> In the /rapids/HPO/ directory open the notebook hpo.ipynb
 
 ## Using the CLI
 
