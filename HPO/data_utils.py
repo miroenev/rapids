@@ -7,7 +7,7 @@ import cuml
 
 import time
 import gzip 
-
+import yaml
 import os
 import warnings
 
@@ -267,3 +267,16 @@ def print_stats ( data ):
     print(f'  train stDevs :{data.trainData.x.std():>8.3f} {data.trainData.y.std():>8.3f} {data.trainData.z.std():>8.3f}')
     print(f'\n  test  means  :{data.testData.x.mean():>8.3f} {data.testData.y.mean():>8.3f} {data.testData.z.mean():>8.3f}')
     print(f'  test  stDevs :{data.testData.x.std():>8.3f} {data.testData.y.std():>8.3f} {data.testData.z.std():>8.3f}')
+    
+    
+def load_saved_experiment ( savedExperimentFilename ):
+    if savedExperimentFilename is not None:
+        print(f'loading saved experiment from {savedExperimentFilename}')
+        loadingSavedExperiment = True
+        with open( savedExperimentFilename, 'r') as infile: 
+            exp = yaml.load(infile)            
+    else:
+        print('starting new experiment')
+        loadingSavedExperiment = False
+        exp = {}    
+    return exp, loadingSavedExperiment

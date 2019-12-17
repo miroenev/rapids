@@ -488,7 +488,7 @@ def plot_first_N_trees ( trainedModel, nTrees = 5, figSize = None ):
     nodesPerTree = int( df['Tree'].value_counts().mean() )
     
     if figSize is None:
-        figSize = ( np.clip( nTrees * nodesPerTree * 3, 25, 2**16), nodesPerTree//2 )
+        figSize = ( np.clip( nTrees * nodesPerTree * 3, 25, 500), nodesPerTree//2 )
         print(figSize)
         
     plt.figure ( figsize = figSize, facecolor=(1, 1, 1) )

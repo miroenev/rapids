@@ -436,3 +436,34 @@ def evaluate_manual_params_CPU ( dataset, manualXGBoostParamsCPU, nCPUWorkers = 
     print(f'train accuracy : {trainAccuracy:0.4f} in {trainTime:0.4f} seconds')
     print(f'test  accuracy : {testAccuracy:0.4f} in {inferenceTime:0.4f} seconds')
     return trainedModelCPU, trainTime, inferenceTime
+
+def build_worker_spec( yamlFilename = 'k8s_dask_worker.yaml' ):
+    
+    # breaking python tabbing to ensure valid yaml multi-line string
+    defaultSpec = \
+'''
+# k8s_dask_worker.yml
+kind: Pod
+metadata:
+  labels:
+    foo: bar
+spec:
+  restartPolicy: Never
+  containers:
+  - image: ericharper/rapids-dask-hpo:latest
+    imagePullPolicy: IfNotPresent
+    args: [dask-worker,  --nthreads, '1', --no-bokeh, --memory-limit, 6GB, --no-bokeh, --death-timeout, '60']
+    name: dask
+    resources:
+      limits:
+        cpu: "2"
+        memory: 6G
+        nvidia.com/gpu: 1
+      requests:
+        cpu: "2"
+        memory: 6G
+        nvidia.com/gpu: 1
+'''
+    
+    with open(yamlFilename, "w") as outfile:
+        outfile.write( defaultSpec )    

@@ -18,6 +18,12 @@ RUN source activate $CONDA_ENV && pip install dask-kubernetes
 
 RUN mkdir /rapids-dask-hpo && cd /rapids-dask-hpo && git clone https://github.com/miroenev/rapids
 
+# clone latest code from github, and package HPO library files for notebook [ swarm.py, visualization.py, data_utils.py]
+# note: this is necessary to enable dask-workers on Kubernetes Clusters to import HPO library
+RUN source activate $CONDA_ENV && mkdir /rapids-dask-hpo && cd /rapids-dask-hpo \
+    && git clone https://github.com/miroenev/rapids \
+    && cd rapids/HPO && python setup.py install
+
 EXPOSE 8888
 EXPOSE 8787
 
