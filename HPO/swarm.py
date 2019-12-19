@@ -460,7 +460,7 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
-  - image: ericharper/rapids-dask-hpo:latest
+  - image: menev/hpo-rapids:0.1-0.11 # ericharper/rapids-dask-hpo:latest
     imagePullPolicy: IfNotPresent
     args: [dask-worker,  --nthreads, '1', --no-bokeh, --memory-limit, 6GB, --no-bokeh, --death-timeout, '60']
     name: dask
