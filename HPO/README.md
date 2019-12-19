@@ -76,9 +76,10 @@ e.g., http://127.0.0.1:8888
 
 4 -- if the dask-kubernetes python kernel is shutdown before scaling down the workers, zombie workers may persist, use this command to clean up the dask-kubernetes workers from k8s
 
-```sh
+```
+sh
 pods="";
-for i in `kubectl get pods -n kubeflow | grep dask-root- | awk '{print $1}'`; 
-
-do pods="${pods} ${i}"; done; echo "deleting ${pods}";  kubectl delete pods -n kubeflow ${pods}
+for i in `kubectl get pods -n kubeflow | grep dask-root- | awk '{print $1}'`; do pods="${pods} ${i}"; done; 
+echo "deleting ${pods}"; 
+kubectl delete pods -n kubeflow ${pods}
 ```
