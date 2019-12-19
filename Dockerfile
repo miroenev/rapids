@@ -20,3 +20,8 @@ RUN git clone https://github.com/miroenev/rapids
 RUN source activate $CONDA_ENV && conda install -y -c pytorch pytorch    
 
 EXPOSE 8888
+
+WORKDIR /
+
+# the runtime RAPIDS container automatically launches a Jupyter Lab instances on port 8888
+# CMD ["bash", "-c", "source activate $CONDA_ENV && jupyter lab --no-browser --ip=0.0.0.0 --allow-root --NotebookApp.token=''"]
