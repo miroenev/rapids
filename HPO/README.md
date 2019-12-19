@@ -10,18 +10,18 @@
 
 2 -- build container [ Dockerfile in  HPO/docker directory ] [takes 5-10 minutes]
 
-```cd rapids/HPO/docker && sudo docker build -t rapids-dask-hpo .```
+```cd rapids/HPO && sudo docker build . -t rapids-dask-hpo```
 
 3 -- launch/run the container [auto starts jupyterlab server]
 
-```sudo docker run --runtime=nvidia -it -p 8888:8888 -p 8787:8787 rapids-dask-hpo```
+```sudo docker run --runtime=nvidia -it --rm -p 8888:8888 -p 8787:8787 rapids-dask-hpo```
 
 4 -- connect to the notebook
 
 > navigate browser to the IP of the machine running the container
 e.g., http://127.0.0.1:8888
 
-> In the /rapids/HPO/ directory open the notebook hpo.ipynb
+> In the /rapids/HPO/ directory open the notebook ```hpo.ipynb```
 
 ## Using the CLI [ TDOO: incomplete refactor ]
 
