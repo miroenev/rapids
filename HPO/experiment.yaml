@@ -1,26 +1,32 @@
-HPO_strategy:
+HPOConfig:
   asyncWarmupFlag: false
-  nEpochs: 10
+  nEpochs: 3
   nParticles: 16
   randomSeed: 0
   strategy: sync
-compute_strategy:
+computeConfig:
+  clientObject: null
   clusterType: LocalCUDACluster
   nWorkers: 4
-dataset:
+dataTransformsConfig:
+  percentTrainSplit: 0.75
+  randomSeed: 0
+  samplesToSwap: 4000
+  shuffleAtSplit: true
+  standardScaling: true
+datasetConfig:
   coil1StDev: 0.3
   coil2StDev: 0.3
   coilDensity: 18
   coilType: swirl
   datasetName: synthetic-swirl
+  datasetObject: null
   localSaveDir: ./data/
   nGuidePointsPerCoil: 1000
   nSamples: 2000000
   randomSeed: 0
   shuffleFlag: true
-inference_strategy:
-  accelerateInference: true
-model:
+modelConfig:
   early-stopping-rounds: 250
   nTrees-ceiling: 2000
   name: XGBoost
@@ -40,13 +46,7 @@ model:
   - 0.0
   - 3.0
   - float
-transforms:
-  percentTrainSplit: 0.75
-  randomSeed: 0
-  samplesToSwap: 4000
-  shuffleAtSplit: true
-  standardScaling: true
-visualization:
+vizConfig:
   embedding:
     method: UMAP
     sampleLimit: 15000

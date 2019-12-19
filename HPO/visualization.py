@@ -496,10 +496,11 @@ def plot_first_N_trees ( trainedModel, nTrees = 5, figSize = None ):
         ax = plt.subplot(1, nTrees, iTree + 1)
         xgboost.plot_tree ( trainedModel, num_trees = iTree, ax = ax )
 
-def plot_feature_importance( trainedModel, maxFeatures = 10, color='#a788e4'):
+def plot_feature_importance( trainedModel, maxFeatures = 10, importance_type='gain', color='#a788e4'):
     plt.figure ( figsize = (10,7) )
     ax = plt.subplot(1,1,1)
     xgboost.plot_importance ( trainedModel, 
+                              importance_type='gain',
                               max_num_features = maxFeatures, 
                               color=color, ax = ax, zorder=3 );
     plt.grid(True, zorder=0)

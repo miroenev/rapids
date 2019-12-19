@@ -8,7 +8,7 @@ import cupy
 import cudf
 
 import dask
-from dask import delayed
+from dask import delayed, persist
 from dask.distributed import as_completed
 import xgboost
 
@@ -67,20 +67,21 @@ def parse_tunable_params ( modelConfig ):
     return paramRanges 
     
 class Swarm():
-    def __init__ ( self, client, dataset, HPOConfig, modelConfig, computeConfig ):
+    def __init__ ( self, experiment):
+        self.client = experiment['computeConfig']['clientObject']
+        self.dataset = experiment['datasetConfig']['datasetObject']
+        self.HPOConfig = experiment['HPOConfig']
+        self.modelConfig = experiment['modelConfig']
+        self.computeConfig = experiment['computeConfig']
         
-        self.client = client
-        self.dataset = dataset
-        
-        
-        self.nParticles = HPOConfig['nParticles']
-        self.nEpochs = HPOConfig['nEpochs']
-        self.paramRanges = parse_tunable_params( modelConfig )
+        self.nParticles = self.HPOConfig['nParticles']
+        self.nEpochs = self.HPOConfig['nEpochs']
+        self.paramRanges = parse_tunable_params( self.modelConfig )
 
         # CPU baseline options
-        if computeConfig['clusterType'] == 'LocalCluster':
+        if self.computeConfig['clusterType'] == 'LocalCluster':
             self.cpuFlag = True
-            self.dataset.cpuDataset = dataset_to_CPU ( dataset )
+            self.dataset.cpuDataset = dataset_to_CPU ( self.dataset )
         else:
             self.cpuFlag = False
             self.dataset.cpuDataset = None
@@ -101,15 +102,23 @@ class Swarm():
         self.scatteredDataFutures = None
         if self.client is not None:
             if not self.cpuFlag:
+                print('scattering data to GPU workers...', end='')
                 self.scatteredDataFutures = self.client.scatter( [ self.dataset.trainData, self.dataset.trainLabels,
                                                                    self.dataset.testData,  self.dataset.testLabels ],
-                                                                   broadcast = True )                
+                                                                   broadcast = True )           
             else:
+                print('scattering data to CPU workers...', end='')
                 self.scatteredDataFutures = self.client.scatter( [ self.dataset.cpuDataset['trainData'], 
                                                                    self.dataset.cpuDataset['trainLabels'],
                                                                    self.dataset.cpuDataset['testData'], 
                                                                    self.dataset.cpuDataset['testLabels'] ], 
-                                                                   broadcast = True )
+                                                                   broadcast = False ) # there is no need to broadcast between CPU workers [ ? ]
+            print('done scatter')
+            print('  + persisting scattered data...', end='')
+            persist(self.scatteredDataFutures)
+            print('done persist')
+        else:
+            assert('error: missing a dask client/cluster!')
     
     def build_initial_particles( self ):
         self.delayedEvalParticles = []
@@ -255,7 +264,8 @@ class SyncSwarm ( Swarm ):
         
 # see dask documentation https://docs.dask.org/en/latest/futures.html#distributed.as_completed
 class AsyncSwarm ( SyncSwarm ):
-    def run_search( self, syncWarmupFlag = False ):
+    def run_search( self ):
+        syncWarmupFlag = self.HPOConfig['asyncWarmupFlag']
         startTime = time.time()
         
         if syncWarmupFlag:
