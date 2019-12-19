@@ -12,7 +12,7 @@ RUN source activate $CONDA_ENV && jupyter labextension install @jupyter-widgets/
 RUN source activate $CONDA_ENV && conda install -y -c conda-forge ipyvolume && conda clean -yac *
 RUN source activate $CONDA_ENV && jupyter labextension install ipyvolume
 
-RUN source activate $CONDA_ENV && conda install -c conda-forge python-graphviz && conda clean -yac *
+RUN source activate $CONDA_ENV && conda install -c conda-forge python-graphviz graphviz && conda clean -yac *
 
 RUN source activate $CONDA_ENV && pip install dask-kubernetes
 
