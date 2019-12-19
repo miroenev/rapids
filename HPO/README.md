@@ -2,27 +2,6 @@
 
 # Hyperparamter Optimzation using RAPIDS and DASK
 
-Notebook Table of Contents: 
-
-1. [ Generate a classification dataset on GPU ](#data-load) (e.g., double helix, unwinding helix/whirl )
-
-2. [ ETL - process/prepare data for model training ](#ETL) (e.g., scale, split, augment )   
-    
-3. [ Define HPO Strategy ](#define-hpo)
-
-4. [ Create Compute Cluster ](#compute-cluster)
-   > LocalCUDACluster or KubeCluster
-      
-5. [ Define Seach ](#define-search)
-
-6. [ Run ASYNC Particle Swarm ](#run-async-PSO)
-
-7. [ Run Classic Particle Swarm ](#run-classic-PSO)
-
-8. [ Run Random Search Baseline ](#run-random-search)
-
-9. [ Summary ](#summary)
-
 ## Install and Run Demo
 
 1 -- clone repository
@@ -74,7 +53,7 @@ e.g., http://127.0.0.1:8888
                 --num_timesteps 10 --coil_type 'helix'
 ```
 
-4 -- if the dask-kubernetes python kernel is shutdown before scaling down the workers, zombie workers may persist, use this command to clean up the dask-kubernetes workers from k8s
+5 -- if the dask-kubernetes python kernel is shutdown before scaling down the workers, zombie workers may persist, use this command to clean up the dask-kubernetes workers from k8s
 
 ```
 sh
